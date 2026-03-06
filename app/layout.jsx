@@ -1,7 +1,22 @@
 import { Layout, Navbar, Footer } from '../lib'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
+import { Instrument_Serif, Space_Grotesk } from 'next/font/google'
+import Image from 'next/image'
 import 'nextra-theme-docs/style.css'
+import './globals.css'
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-heading',
+})
+
+const spaceGrotesk = Space_Grotesk({
+  subsets: ['latin'],
+  weight: '400',
+  variable: '--font-body',
+})
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.vercel.app'
 
@@ -22,11 +37,35 @@ export const metadata = {
 
 const navbar = (
   <Navbar
-    logo={<b>The Pensieve</b>}
+    logo={
+      <span className="pensieve-navbar-logo">
+        <Image className="pensieve-navbar-logo-img" src="/favicon.png" alt="The Pensieve" width={28} height={28} />
+        <span>The Pensieve</span>
+      </span>
+    }
     projectLink="https://github.com/Alpastx/ThePensieve"
   />
 )
-const footer = <Footer>MIT {new Date().getFullYear()} © The Pensieve.</Footer>
+const footer = (
+  <footer className="pensieve-footer">
+    <div className="pensieve-footer-inner">
+      <span className="pensieve-footer-copy">
+        © {new Date().getFullYear()} The Pensieve. All rights reserved.
+      </span>
+      <span className="pensieve-footer-links">
+        <a href="https://github.com/Alpastx/ThePensieve" target="_blank" rel="noopener noreferrer">
+          GitHub
+        </a>
+        <a href="https://twitter.com" target="_blank" rel="noopener noreferrer">
+          Twitter
+        </a>
+        <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">
+          LinkedIn
+        </a>
+      </span>
+    </div>
+  </footer>
+)
 
 export default async function RootLayout({ children }) {
   const docsRepo = process.env.NEXT_PUBLIC_DOCS_REPO || 'https://github.com/Alpastx/ThePensieve'
@@ -35,7 +74,7 @@ export default async function RootLayout({ children }) {
     <html
       lang="en"
       dir="ltr"
-      className="dark"
+      className={`dark ${instrumentSerif.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
       <Head />
@@ -47,6 +86,8 @@ export default async function RootLayout({ children }) {
           footer={footer}
           darkMode={false}
           nextThemes={{ forcedTheme: 'dark' }}
+          editLink={null}
+          feedback={{ content: null }}
         >
           {children}
         </Layout>

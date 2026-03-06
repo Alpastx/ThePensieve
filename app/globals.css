@@ -8,19 +8,154 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-body);
   --font-mono: var(--font-geist-mono);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
+    --background: #000000;
     --foreground: #ededed;
   }
 }
 
+html.dark,
+html.dark body,
+html.dark .nextra-nav-container,
+html.dark .nextra-nav-container nav,
+html.dark .nextra-navbar,
+html.dark .nextra-navbar-blur,
+html.dark .nextra-sidebar-container,
+html.dark .nextra-sidebar-footer,
+html.dark .nextra-toc,
+html.dark aside,
+html.dark footer,
+html.dark .nextra-search,
+html.dark .nextra-mobile-nav {
+  background-color: #000000 !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+
+
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-body), sans-serif;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-heading), serif;
+}
+
+.pensieve-navbar-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  text-decoration: none !important;
+  color: #ffffff !important;
+  transition: all 0.3s ease;
+}
+
+.pensieve-navbar-logo:hover {
+  filter: drop-shadow(0 0 8px rgba(168, 85, 247, 0.3));
+}
+
+.pensieve-navbar-logo-img {
+  border-radius: 8px;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.15);
+  transition: all 0.3s ease;
+}
+
+.pensieve-navbar-logo:hover .pensieve-navbar-logo-img {
+  box-shadow: 0 0 15px rgba(168, 85, 247, 0.4);
+  transform: scale(1.05);
+}
+
+.pensieve-navbar-logo span {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-weight: 400;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+}
+
+/* Hide scrollbars site-wide (mainly for the sidebar) */
+.nextra-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.dark nav a[data-active="true"],
+.dark .nextra-sidebar-container a[aria-current="page"],
+.dark .nextra-sidebar-container a[data-active="true"],
+.dark aside a[data-active="true"],
+html.dark a[data-active="true"] {
+  color: #a855f7 !important;
+  text-shadow: 0 0 20px rgba(168, 85, 247, 0.2);
+  background-color: rgba(168, 85, 247, 0.08) !important;
+}
+
+.dark .nextra-sidebar-container li {
+  transition: background-color 0.2s ease;
+}
+
+/* Sidebar separator labels */
+.dark .nextra-sidebar-container [data-type="separator"] {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(168, 85, 247, 0.5);
+}
+
+/* Right TOC Active Links */
+.dark .nextra-toc a[aria-current="true"] {
+  color: #a855f7 !important;
+  text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+/* Custom Footer */
+.pensieve-footer {
+  background-color: #000000;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.pensieve-footer-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  max-width: 90rem;
+  margin: 0 auto;
+  padding: 1rem 1.5rem;
+}
+
+.pensieve-footer-copy {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.3);
+}
+
+.pensieve-footer-links {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.pensieve-footer-links a {
+  font-family: var(--font-body), sans-serif;
+  font-size: 0.8125rem;
+  font-weight: 400;
+  color: rgba(255, 255, 255, 0.3);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.pensieve-footer-links a:hover {
+  color: rgba(255, 255, 255, 0.7);
 }
