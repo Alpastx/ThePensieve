@@ -84,8 +84,8 @@ export default async function RootLayout({ children }) {
           pageMap={await getPageMap()}
           docsRepositoryBase={docsRepo}
           footer={footer}
-          darkMode={false}
-          nextThemes={{ forcedTheme: 'dark' }}
+          darkMode={true}
+          nextThemes={{ defaultTheme: 'dark', forcedTheme: 'dark' }}
           editLink={null}
           feedback={{ content: null }}
         >

@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #000000;
+  --foreground: #ededed;
 }
 
 @theme inline {
@@ -19,18 +19,39 @@
   }
 }
 
+.dark,
 html.dark,
+.dark body,
 html.dark body,
+.dark #__next,
+html.dark #__next,
+.dark div[data-theme="dark"],
+html.dark div[data-theme="dark"],
+.dark main,
+html.dark main,
+.dark article,
+html.dark article,
+.dark .nextra-nav-container,
 html.dark .nextra-nav-container,
+.dark .nextra-nav-container nav,
 html.dark .nextra-nav-container nav,
+.dark .nextra-navbar,
 html.dark .nextra-navbar,
+.dark .nextra-navbar-blur,
 html.dark .nextra-navbar-blur,
+.dark .nextra-sidebar-container,
 html.dark .nextra-sidebar-container,
+.dark .nextra-sidebar-footer,
 html.dark .nextra-sidebar-footer,
+.dark .nextra-toc,
 html.dark .nextra-toc,
+.dark aside,
 html.dark aside,
+.dark footer,
 html.dark footer,
+.dark .nextra-search,
 html.dark .nextra-search,
+.dark .nextra-mobile-nav,
 html.dark .nextra-mobile-nav {
   background-color: #000000 !important;
   background-image: none !important;
@@ -41,8 +62,8 @@ html.dark .nextra-mobile-nav {
 
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background-color: #000000 !important;
+  color: #ededed;
   font-family: var(--font-body), sans-serif;
 }
 
@@ -158,4 +179,391 @@ html.dark a[data-active="true"] {
 
 .pensieve-footer-links a:hover {
   color: rgba(255, 255, 255, 0.7);
+}
+
+/* ===== CONTENT FADE-IN ===== */
+
+article,
+.nextra-content {
+  animation: pensieve-fade 0.35s ease-out;
+}
+
+@keyframes pensieve-fade {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ===== LANDING PAGE ===== */
+
+.pensieve-landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: calc(100vh - 64px);
+  padding: 0 1.5rem 4rem;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Ambient glow behind hero */
+.hero-glow {
+  position: absolute;
+  top: -10%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 700px;
+  height: 500px;
+  background:
+    radial-gradient(ellipse at 40% 40%,
+      rgba(168, 85, 247, 0.1) 0%,
+      transparent 60%),
+    radial-gradient(ellipse at 65% 60%,
+      rgba(99, 102, 241, 0.06) 0%,
+      transparent 55%);
+  filter: blur(80px);
+  pointer-events: none;
+  animation: glow-pulse 8s ease-in-out infinite alternate;
+  z-index: 0;
+}
+
+@keyframes glow-pulse {
+  0% {
+    opacity: 0.4;
+  }
+
+  100% {
+    opacity: 1;
+  }
+}
+
+/* Hero Section */
+.pensieve-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 6rem 0 3rem;
+  position: relative;
+  z-index: 1;
+  max-width: 48rem;
+}
+
+.hero-logo {
+  border-radius: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: 0 0 40px rgba(168, 85, 247, 0.2);
+  animation: logo-float 6s ease-in-out infinite;
+}
+
+@keyframes logo-float {
+  0% {
+    transform: translateY(0);
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.15);
+  }
+
+  50% {
+    transform: translateY(-10px);
+    box-shadow: 0 0 50px rgba(168, 85, 247, 0.4);
+  }
+
+  100% {
+    transform: translateY(0);
+    box-shadow: 0 0 30px rgba(168, 85, 247, 0.15);
+  }
+}
+
+.pensieve-hero h1 {
+  font-family: "Instrument Serif", Georgia, serif !important;
+  font-size: clamp(3rem, 8vw, 5rem) !important;
+  font-weight: 400 !important;
+  letter-spacing: -0.03em !important;
+  line-height: 1.05 !important;
+  margin-bottom: 1.5rem !important;
+  background: linear-gradient(135deg, #ffffff 0%, #e2d1f9 40%, #a855f7 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.pensieve-hero .quote {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-style: italic;
+  font-size: clamp(0.9375rem, 2.5vw, 1.1875rem);
+  color: rgba(255, 255, 255, 0.45);
+  line-height: 1.6;
+  max-width: 34rem;
+  margin: 0 0 1.5rem;
+  padding: 0;
+  border: none;
+}
+
+.pensieve-hero .quote cite {
+  display: block;
+  font-size: 0.75rem;
+  color: rgba(168, 85, 247, 0.6);
+  margin-top: 0.75rem;
+  font-style: normal;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-family: ui-monospace, monospace;
+}
+
+.pensieve-subtitle {
+  font-size: clamp(0.875rem, 2vw, 1rem);
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1.7;
+  max-width: 30rem;
+  margin-bottom: 2.5rem;
+}
+
+.cta-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.875rem 2rem;
+  background: #a855f7;
+  color: #ffffff !important;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  font-size: 0.9375rem;
+  text-decoration: none !important;
+  transition: all 0.3s ease;
+  box-shadow: 0 0 30px rgba(168, 85, 247, 0.25);
+  border: none;
+  cursor: pointer;
+}
+
+.cta-button:hover {
+  background: #9333ea;
+  box-shadow: 0 0 50px rgba(168, 85, 247, 0.4);
+  transform: translateY(-2px);
+}
+
+/* Section Labels */
+.section-label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(168, 85, 247, 0.5);
+  margin-bottom: 1.25rem;
+  text-align: center;
+  font-family: ui-monospace, monospace;
+}
+
+/* Phase Cards Grid */
+.phase-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto 3rem;
+  padding: 0 1rem;
+}
+
+.phase-card {
+  position: relative;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 1rem;
+  padding: 1.5rem;
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: all 0.3s ease;
+  overflow: hidden;
+}
+
+.phase-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(168, 85, 247, 0.3),
+      transparent);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.phase-card:hover {
+  background: rgba(168, 85, 247, 0.04);
+  border-color: rgba(168, 85, 247, 0.15);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(168, 85, 247, 0.08);
+}
+
+.phase-card:hover::before {
+  opacity: 1;
+}
+
+.phase-number {
+  display: block;
+  font-family: "Instrument Serif", serif;
+  font-size: 1.75rem;
+  font-weight: 400;
+  color: rgba(168, 85, 247, 0.2);
+  line-height: 1;
+  margin-bottom: 0.75rem;
+}
+
+.phase-card h3 {
+  font-family: "Instrument Serif", Georgia, serif !important;
+  font-size: 1.0625rem !important;
+  font-weight: 400 !important;
+  color: #ffffff !important;
+  margin: 0 0 0.5rem !important;
+  letter-spacing: -0.01em;
+}
+
+.phase-card p {
+  font-size: 0.8125rem;
+  color: rgba(255, 255, 255, 0.35);
+  line-height: 1.5;
+  margin: 0;
+}
+
+/* Divider */
+.pensieve-divider {
+  width: 100%;
+  max-width: 56rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  margin: 1rem auto 2rem;
+}
+
+.pensieve-divider::before,
+.pensieve-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(255, 255, 255, 0.06),
+      transparent);
+}
+
+.pensieve-divider span {
+  font-family: "Instrument Serif", serif;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.12);
+  font-size: 0.8125rem;
+}
+
+/* Reference Cards */
+.ref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.875rem;
+  width: 100%;
+  max-width: 56rem;
+  margin: 0 auto 4rem;
+}
+
+.ref-card {
+  background: rgba(255, 255, 255, 0.015);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  text-decoration: none !important;
+  color: inherit !important;
+  transition: all 0.3s ease;
+}
+
+.ref-card:hover {
+  border-color: rgba(168, 85, 247, 0.15);
+  background: rgba(168, 85, 247, 0.03);
+}
+
+.ref-card h4 {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: #ffffff;
+  margin: 0 0 0.25rem;
+}
+
+.ref-card p {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* ===== FORCE DARK MODE / HIDE TOGGLE ===== */
+
+html {
+  color-scheme: dark !important;
+}
+
+/* Hide the theme toggle button everywhere */
+button[title="Change theme"],
+button[aria-label="Toggle theme"],
+[data-toggle-theme],
+div:has(> select option[value="light"]) {
+  display: none !important;
+}
+
+/* Sidebar toggle button — match AMOLED black */
+.dark aside>div:last-child,
+.dark .nextra-sidebar-container>div:last-child {
+  background-color: #000000 !important;
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ===== RESPONSIVE ===== */
+
+@media (max-width: 768px) {
+  .pensieve-hero {
+    padding: 3rem 0 2rem;
+  }
+
+  .phase-grid,
+  .ref-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-glow {
+    width: 400px;
+    height: 300px;
+  }
+
+  /* Navbar Mobile Fixes */
+  .pensieve-navbar-logo span {
+    display: none;
+    /* Hide text logo, keep only the icon */
+  }
+
+  .pensieve-search {
+    margin: 0;
+    min-width: unset;
+  }
+
+  /* Table Mobile Fix */
+  .dark table {
+    display: block;
+    overflow-x: auto;
+    white-space: nowrap;
+    width: 100%;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Footer Mobile Fix */
+  .pensieve-footer-inner {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+    padding: 1.5rem 1rem;
+  }
 }
