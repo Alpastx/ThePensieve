@@ -229,8 +229,12 @@ xsltproc scan.xml -o scan.html
 - [ ] Review port list: note unusual/high ports that may hide non-standard services
 - [ ] For network-wide scan: `nmap -p 21,22,25,80,88,135,139,443,445,3389,5985 -iL live_hosts.txt -oA scans/key_ports`
 
-> [!CAUTION]
-> **OPSEC Warning:** `--min-rate 10000` is loud and fast. In real engagements, lower the rate or use `--scan-delay` to avoid detection. In exams/labs
+import { Callout } from 'nextra/components'
+
+<Callout type="warning">
+**OPSEC Warning:** `--min-rate 10000` is loud and fast.  
+In real engagements, lower the rate or use `--scan-delay` to avoid detection.
+</Callout>
 
 
 ### Phase 4: Version & Service Detection
