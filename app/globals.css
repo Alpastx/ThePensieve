@@ -3,6 +3,8 @@
 :root {
   --background: #000000;
   --foreground: #ededed;
+  --nextra-primary-hue: 270deg;
+  --nextra-primary-saturation: 71%;
 }
 
 @theme inline {
@@ -60,6 +62,10 @@ html.dark .nextra-mobile-nav {
 }
 
 
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(168, 85, 247, 0.3) transparent;
+}
 
 body {
   background-color: #000000 !important;
@@ -137,7 +143,7 @@ html.dark a[data-active="true"] {
 
 /* Right TOC Active Links */
 .dark .nextra-toc a[aria-current="true"] {
-  color: #a855f7 !important;
+  color: #a855f7;
   text-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
 }
 
@@ -178,7 +184,7 @@ html.dark a[data-active="true"] {
 }
 
 .pensieve-footer-links a:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color:#9333ea;
 }
 
 /* ===== CONTENT FADE-IN ===== */
@@ -550,14 +556,17 @@ div:has(> select option[value="light"]) {
     min-width: unset;
   }
 
-  /* Table Mobile Fix */
+  Table Mobile Fix
   .dark table {
     display: block;
     overflow-x: auto;
     white-space: nowrap;
     width: 100%;
     -webkit-overflow-scrolling: touch;
+    background-color: rgba(168, 85, 247, 0.08) !important;
   }
+
+  
 
   /* Footer Mobile Fix */
   .pensieve-footer-inner {
@@ -566,4 +575,141 @@ div:has(> select option[value="light"]) {
     text-align: center;
     padding: 1.5rem 1rem;
   }
+}
+
+
+/* ===== CODE BLOCKS ===== */
+
+.dark pre {
+  background-color: #0a0a0a !important;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.75rem;
+}
+
+/* Inline code */
+.dark :not(pre)>code {
+  background-color: rgba(168, 85, 247, 0.1) !important;
+  border: 1px solid rgba(168, 85, 247, 0.15);
+  border-radius: 0.375rem;
+  color: #e9d5ff !important;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875em;
+}
+
+/* ===== TABLES ===== */
+
+.dark table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 2rem 0;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.dark th {
+  background-color: rgba(168, 85, 247, 0.08) !important;
+  font-family: "Instrument Serif", serif;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  padding: 1rem !important;
+  text-align: left;
+  border-bottom: 1px solid rgba(168, 85, 247, 0.2) !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.dark td {
+  padding: 1rem !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+  border-top: none !important;
+  border-left: none !important;
+  border-right: none !important;
+}
+
+.dark tbody tr:hover td {
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+/* ===== CALLOUTS ===== */
+
+.dark .nextra-callout {
+  border-radius: 0.75rem;
+  border-left-width: 3px;
+}
+
+/* ===== BLOCKQUOTES & CALLOUTS ===== */
+
+.dark blockquote {
+  background: rgba(168, 85, 247, 0.03);
+  border: 1px solid rgba(168, 85, 247, 0.1);
+  border-left: 3px solid #a855f7;
+  border-radius: 0.5rem;
+  color: rgba(255, 255, 255, 0.65);
+  padding: 1rem 1.25rem;
+  margin: 1.5rem 0;
+  font-style: normal;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.dark blockquote p {
+  margin: 0 !important;
+}
+
+/* Make Obsidian-style callout prefixes (like [!IMPORTANT]) stand out slightly */
+.dark blockquote:has(strong) strong {
+  color: #c084fc;
+}
+
+/* ===== CHECKBOXES (Task Lists) ===== */
+
+.dark input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  top: 3px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.dark input[type="checkbox"]:checked {
+  background: #a855f7;
+  border-color: #a855f7;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+}
+
+.dark input[type="checkbox"]:checked::after {
+  content: "";
+  width: 5px;
+  height: 9px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  position: absolute;
+  top: 2px;
+}
+
+.dark input[type="checkbox"]:focus {
+  outline: 2px solid rgba(168, 85, 247, 0.5);
+  outline-offset: 2px;
+}
+
+/* Task list items */
+.dark li:has(input[type="checkbox"]) {
+  list-style-type: none;
+  margin-left: -1.5rem;
+}
+
+/* Global Selection Color */
+::selection {
+  background: rgba(168, 85, 247, 0.3);
+  color: inherit;
 }

@@ -2,7 +2,7 @@ export default {
     index: 'My Homepage',
     '#': {
         type: 'separator',
-        title: 'Red-Teaming'
+        title: 'Red-Teaming (CPTS/OSCP/CJCA)'
     },
     '00-Pre-Engagement': '00-Pre-Engagement',
     '01-Recon': '01-Recon',
@@ -10,23 +10,25 @@ export default {
     '03-Exploitation': '03-Exploitation',
     '04-Post-exploitation': '04-Post-Exploitation',
     '05-Lateral-Movement': '05-Lateral-Movement',
-    '##' :{
-    type: 'separator',
-    title: 'Blue-Teaming'
-},
+    '##': {
+        type: 'separator',
+        title: 'Blue-Teaming'
+    },
 
-'###' : {
-    type: 'separator',
-    title: 'CVE-Research'
-},
-'####' : {
-    type: 'separator',
-    title: 'Writeups'
-},    
-'#####' : {
-    type: 'separator',
-    title: 'Tools'
-} 
-
-
+    '###': {
+        type: 'separator',
+        title: 'CVE-Research'
+    },
+    '####': {
+        type: 'separator',
+        title: 'Writeups'
+    },
+    '#####': {
+        type: 'separator',
+        title: 'Tools'
+    },
+    '######': {
+        type: 'separator',
+        title: 'Blogs'
+    },
 }
