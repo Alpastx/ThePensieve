@@ -5,6 +5,7 @@ import { Instrument_Serif, Space_Grotesk } from 'next/font/google'
 import Image from 'next/image'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
+import { Analytics } from '@vercel/analytics/next';
 
 const instrumentSerif = Instrument_Serif({
   subsets: ['latin'],
@@ -79,6 +80,7 @@ export default async function RootLayout({ children }) {
     >
       <Head />
       <body>
+        <Analytics />
         <Layout
           navbar={navbar}
           pageMap={await getPageMap()}
