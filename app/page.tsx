@@ -29,7 +29,7 @@ export default function Home() {
           This is a personal manual — every technique, every command, every memory — gathered and structured over time to conquer the chaos.
         </p>
 
-        <a href="/resources" className="cta-button">
+        <a href="/Red-Teaming/00-Pre-Engagement" className="cta-button">
           Enter the Pensieve →
         </a>
 

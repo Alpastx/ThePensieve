@@ -54,13 +54,13 @@ const footer = (
         © {new Date().getFullYear()} The Pensieve. All rights reserved.
       </span>
       <span className="pensieve-footer-links">
-        <a href="https://github.com/Alpastx/ThePensieve" target="_blank" rel="noopener noreferrer">
+        <a key="github" href="https://github.com/Alpastx/ThePensieve" target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
-        <a href="https://twitter.com" target="_blank" rel="noopener noreferrer">
+        <a key="twitter" href="https://twitter.com" target="_blank" rel="noopener noreferrer">
           Twitter
         </a>
-        <a href="https://linkedin.com" target="_blank" rel="noopener noreferrer">
+        <a key="linkedin" href="https://linkedin.com" target="_blank" rel="noopener noreferrer">
           LinkedIn
         </a>
       </span>

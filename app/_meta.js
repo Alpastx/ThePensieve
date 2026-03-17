@@ -4,12 +4,33 @@ export default {
         type: 'separator',
         title: 'Red-Teaming (CPTS/OSCP/CJCA)'
     },
-    '00-Pre-Engagement': '00-Pre-Engagement',
-    '01-Recon': '01-Recon',
-    '02-Pre-Exploit': '02-Pre-Exploitation',
-    '03-Exploitation': '03-Exploitation',
-    '04-Post-exploitation': '04-Post-Exploitation',
-    '05-Lateral-Movement': '05-Lateral-Movement',
+    'Red-Teaming': {
+        display: 'hidden'
+    },
+    "pre-eng" : {
+        title: '00-Pre-Engagement',
+        href: '/Red-Teaming/00-Pre-Engagement'
+    },
+    "recon" : {
+        title: '01-Recon',
+        href: '/Red-Teaming/01-Recon'
+    },
+    "pre-exploit" : {
+        title: '02-Pre-Exploitation',
+        href: '/Red-Teaming/02-Pre-Exploit'
+    },
+    "exploitation" : {
+        title: '03-Exploitation',
+        href: '/Red-Teaming/03-Exploitation'
+    },
+    "post-exploitation" : {
+        title: '04-Post-Exploitation',
+        href: '/Red-Teaming/04-Post-exploitation'
+    },
+    "lateral-movement" : {
+        title: '05-Lateral-Movement',
+        href: '/Red-Teaming/05-Lateral-Movement'
+    },
     '##': {
         type: 'separator',
         title: 'Blue-Teaming'
@@ -26,6 +47,33 @@ export default {
     '#####': {
         type: 'separator',
         title: 'Tools'
+    },
+    'Tools': {
+        display: 'hidden'
+    },
+    'tool_nmap': {
+        title: 'nmap',
+        href: '/Tools/Nmap'
+    },
+    'tool_rustscan': {
+        title: 'rustscan',
+        href: '/Tools/rustscan'
+    },
+    'tool_hydra': {
+        title: 'hydra',
+        href: '/Tools/hydra'
+    },
+    'tool_netcat': {
+        title: 'Netcat',
+        href: '/Tools/Netcat'
+    },
+    'tool_Ffuf': {
+        title: 'Ffuf',
+        href: '/Tools/Ffuf'
+    },
+    'tool_meterpreter': {
+        title: 'Meterpreter',
+        href: '/Tools/Meterpreter'
     },
     '######': {
         type: 'separator',

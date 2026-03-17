@@ -1,4 +1,6 @@
-## Cheatsheet
+import { Callout } from 'nextra/components'
+
+## red-Cheatsheet
 
 | Document | Purpose |
 |----------|---------|
@@ -15,11 +17,12 @@
 
 ## Goals of Penetration Testing
 
-> [!NOTE]
-> **Ask the client:**
-> - What is the client trying to achieve with this test?
-> - What regulatory or compliance requirements are driving this engagement?
-> - Is the focus on finding vulnerabilities, testing defenses, or assessing business impact?
+<Callout type="info">
+  **Ask the client:**
+  - What is the client trying to achieve with this test?
+  - What regulatory or compliance requirements are driving this engagement?
+  - Is the focus on finding vulnerabilities, testing defenses, or assessing business impact?
+</Callout>
 
 ### Primary Goal Categories
 
@@ -48,8 +51,9 @@
 
 ## Pre-Engagement Checklist
 
-> [!IMPORTANT]
-> **Complete this before any testing.** No exceptions. Verbal approval is not sufficient.
+<Callout type="important">
+  **Complete this before any testing.** No exceptions. Verbal approval is not sufficient.
+</Callout>
 
 ### Phase 1: Legal Foundation
 - [ ] Sign NDA with client
@@ -93,8 +97,9 @@
 
 ## Penetration Testing Process
 
-> [!IMPORTANT]
-> A penetration test follows a structured, methodical process designed to systematically identify and document security vulnerabilities. This approach ensures maximum efficiency, meticulous documentation, and actionable findings for the client.
+<Callout type="important">
+  A penetration test follows a structured, methodical process designed to systematically identify and document security vulnerabilities. This approach ensures maximum efficiency, meticulous documentation, and actionable findings for the client.
+</Callout>
 
 
 ### Phase 1: Pre-Engagement
@@ -105,8 +110,9 @@ Sets the foundation for the entire test. Work with the client to understand thei
 - Define testing windows and emergency procedures
 - Identify key personnel and contacts
 
-> [!TIP]
-> See the [Pre-Engagement Checklist](#Pre-Engagement%20Checklist) section below for the full step-by-step.
+<Callout>
+  See the [Pre-Engagement Checklist](#Pre-Engagement%20Checklist) section below for the full step-by-step.
+</Callout>
 
 ### Phase 2: Information Gathering
 
@@ -200,8 +206,9 @@ Transform technical findings into actionable information.
 | **Flexibility** | Consistent across engagements | Tailored per engagement |
 | **Authorization** | Framework for services | Explicit permission for specific pentest |
 
-> [!CAUTION]
-> **Never test without written authorization.** Verbal approval = no legal protection. Get it in writing.
+<Callout type="error">
+  **Never test without written authorization.** Verbal approval = no legal protection. Get it in writing.
+</Callout>
 
 ### Rules of Engagement (RoE)
 
@@ -216,13 +223,15 @@ The RoE is your "Get Out of Jail Free" letter. It must include:
 
 ### Third-Party Authorization
 
-> [!IMPORTANT]
-> **Cloud-hosted infrastructure** requires separate authorization from the cloud provider (AWS, Azure, GCP, etc.). Each has a process for pentest notification/approval. Check their security/testing policy before including cloud assets in scope.
+<Callout type="important">
+  **Cloud-hosted infrastructure** requires separate authorization from the cloud provider (AWS, Azure, GCP, etc.). Each has a process for pentest notification/approval. Check their security/testing policy before including cloud assets in scope.
+</Callout>
 
 ### Indian Legal Framework
 
-> [!CAUTION]
-> **Operating in India** — unauthorized access to computer systems is a criminal offense under the Information Technology Act, 2000. Always have written authorization before any testing activity.
+<Callout type="error">
+  **Operating in India** — unauthorized access to computer systems is a criminal offense under the Information Technology Act, 2000. Always have written authorization before any testing activity.
+</Callout>
 
 #### IT Act 2000 — Key Sections for Pentesters
 
@@ -238,8 +247,9 @@ The RoE is your "Get Out of Jail Free" letter. It must include:
 | **Section 72** | Breach of confidentiality and privacy | Up to 2 years imprisonment + ₹1 lakh fine |
 | **Section 43A** | Failure to protect sensitive personal data (corporate negligence) | Compensation to affected persons |
 
-> [!IMPORTANT]
-> **Section 43 vs Section 66:** Section 43 is civil (compensation), Section 66 is criminal (imprisonment). Unauthorized pentesting without written authorization can attract **both**.
+<Callout type="important">
+  **Section 43 vs Section 66:** Section 43 is civil (compensation), Section 66 is criminal (imprisonment). Unauthorized pentesting without written authorization can attract **both**.
+</Callout>
 
 #### CERT-In (Indian Computer Emergency Response Team)
 
@@ -258,8 +268,9 @@ The RoE is your "Get Out of Jail Free" letter. It must include:
 | **Cross-border transfer** | Personal data can only be transferred to notified countries |
 | **Penalties** | Up to ₹250 crore for significant non-compliance |
 
-> [!TIP]
-> **For pentesters in India:** Your NDA and SOW should explicitly reference the IT Act 2000 and DPDP Act 2023. Include a clause that the engagement is conducted under Section 43 exemption (authorized testing). This protects you legally.
+<Callout>
+  **For pentesters in India:** Your NDA and SOW should explicitly reference the IT Act 2000 and DPDP Act 2023. Include a clause that the engagement is conducted under Section 43 exemption (authorized testing). This protects you legally.
+</Callout>
 
 #### Indian Industry-Specific Compliance
 
@@ -271,8 +282,9 @@ The RoE is your "Get Out of Jail Free" letter. It must include:
 | **TRAI** | Telecom | Data protection and security audit requirements for telecom operators |
 | **MeitY** | Government IT | Guidelines for securing government websites and applications |
 
-> [!NOTE]
-> **RBI mandates** that banks conduct VAPT at least once a year, and after any major infrastructure change. Many Indian enterprises follow this cycle — plan your engagements accordingly.
+<Callout type="info">
+  **RBI mandates** that banks conduct VAPT at least once a year, and after any major infrastructure change. Many Indian enterprises follow this cycle — plan your engagements accordingly.
+</Callout>
 
 #### Indian Cloud Provider Pentest Policies
 
@@ -346,11 +358,13 @@ The NDA is signed **first** - before detailed scope discussions.
 | | ICS/SCADA |
 | | Systems with regulated data (unless explicitly included) |
 
-> [!TIP]
-> **Testing windows** - Many orgs restrict to off-hours, weekends, or maintenance windows. Document exactly when testing is permitted.
+<Callout>
+  **Testing windows** - Many orgs restrict to off-hours, weekends, or maintenance windows. Document exactly when testing is permitted.
+</Callout>
 
-> [!NOTE]
-> **India context:** If scope includes systems under RBI, SEBI, or IRDAI regulation, the scope document must specifically reference the regulatory mandate driving the assessment. Government systems may require additional authorization from the respective ministry.
+<Callout type="info">
+  **India context:** If scope includes systems under RBI, SEBI, or IRDAI regulation, the scope document must specifically reference the regulatory mandate driving the assessment. Government systems may require additional authorization from the respective ministry.
+</Callout>
 
 ---
 
@@ -430,8 +444,9 @@ The NDA is signed **first** - before detailed scope discussions.
 - **Incident response plan** - Who to call, when to halt testing
 - **Communication channels** - Email (routine), phone (urgent), ticketing
 
-> [!TIP]
-> **When in doubt, ask.** If you discover unexpected systems or unclear scope, contact the client before proceeding.
+<Callout>
+  **When in doubt, ask.** If you discover unexpected systems or unclear scope, contact the client before proceeding.
+</Callout>
 
 ---
 
@@ -445,8 +460,9 @@ The NDA is signed **first** - before detailed scope discussions.
 | **Logging** | Document all activities for report |
 | **Cross-contamination** | Never mix client data - severe breach risk |
 
-> [!CAUTION]
-> **Cross-contamination** - Accidentally including exploit code, passwords, or architecture from a previous client in a new report can identify the original client. Destroy trust and create legal exposure.
+<Callout type="error">
+  **Cross-contamination** - Accidentally including exploit code, passwords, or architecture from a previous client in a new report can identify the original client. Destroy trust and create legal exposure.
+</Callout>
 
 ---
 
@@ -474,8 +490,9 @@ Before testing: confirm client has **recent backups** of all in-scope systems. D
 | **Destruction** | After report delivery, per NDA |
 | **Regulated industries** | Specific requirements (HIPAA, PCI, DPDP Act, RBI VAPT, etc.) |
 
-> [!NOTE]
-> **India context:** Under the DPDP Act 2023, any personal data encountered during testing must be handled as per the Act's provisions. Your NDA should include DPDP Act compliance clauses. If testing uncovers a data breach, the client may need to report to the Data Protection Board of India.
+<Callout type="info">
+  **India context:** Under the DPDP Act 2023, any personal data encountered during testing must be handled as per the Act's provisions. Your NDA should include DPDP Act compliance clauses. If testing uncovers a data breach, the client may need to report to the Data Protection Board of India.
+</Callout>
 
 ---
 
@@ -522,11 +539,12 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 
 ## Methodologies & Frameworks
 
-> [!NOTE]
-> **Ask yourself:**
-> - Which methodology best fits this engagement type?
-> - Does the client require a specific framework for compliance?
-> - Am I combining elements from multiple frameworks for the best coverage?
+<Callout type="info">
+  **Ask yourself:**
+  - Which methodology best fits this engagement type?
+  - Does the client require a specific framework for compliance?
+  - Am I combining elements from multiple frameworks for the best coverage?
+</Callout>
 
 ### Core Methodologies
 
@@ -554,8 +572,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 3. Identity Management Testing
 4. Authentication Testing
 
-> [!TIP]
-> OWASP is continuously updated by the community to address emerging threats. It contains distinct testing procedures with practical examples for nearly every web vulnerability.
+<Callout>
+  OWASP is continuously updated by the community to address emerging threats. It contains distinct testing procedures with practical examples for nearly every web vulnerability.
+</Callout>
 
 ### Choosing the Right Approach
 
@@ -567,8 +586,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 | Red team assessment | MITRE ATT&CK |
 | General pentest | PTES (most common) |
 
-> [!IMPORTANT]
-> Most professional pentesters don't strictly adhere to one methodology — they combine elements from multiple frameworks. This hybrid approach provides flexibility while maintaining structure.
+<Callout type="important">
+  Most professional pentesters don't strictly adhere to one methodology — they combine elements from multiple frameworks. This hybrid approach provides flexibility while maintaining structure.
+</Callout>
 
 
 
@@ -576,8 +596,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 
 ## Freelance Penetration Testing
 
-> [!NOTE]
-> This section covers the business, legal, and operational aspects of working as an independent/freelance penetration tester, with India-specific context.
+<Callout type="info">
+  This section covers the business, legal, and operational aspects of working as an independent/freelance penetration tester, with India-specific context.
+</Callout>
 
 ### Business Setup (India)
 
@@ -587,8 +608,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 | **LLP** (Limited Liability Partnership) | Small team, liability protection | MCA registration, LLP agreement |
 | **Pvt Ltd Company** | Scaling, investor-ready | MCA incorporation, more compliance |
 
-> [!TIP]
-> **Starting out?** Sole proprietorship is the simplest — just your PAN card and GST registration. Move to LLP when you want liability protection or bring on partners.
+<Callout>
+  **Starting out?** Sole proprietorship is the simplest — just your PAN card and GST registration. Move to LLP when you want liability protection or bring on partners.
+</Callout>
 
 ### GST & Invoicing
 
@@ -599,8 +621,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 | **Invoice must include** | GSTIN, SAC code, HSN/SAC, taxable value, CGST/SGST or IGST breakup |
 | **International clients** | Export of services — zero-rated GST (claim refund or supply under LUT) |
 
-> [!IMPORTANT]
-> **Export of services** (foreign clients) — file a Letter of Undertaking (LUT) with GST portal to supply services at zero GST. You can also claim input tax credit refunds.
+<Callout type="important">
+  **Export of services** (foreign clients) — file a Letter of Undertaking (LUT) with GST portal to supply services at zero GST. You can also claim input tax credit refunds.
+</Callout>
 
 ### Tax Considerations
 
@@ -612,8 +635,9 @@ Leaking previous client data (IPs, creds, architecture) to a new client can:
 | **ITR form** | ITR-3 (business income) or ITR-4 (presumptive taxation under 44ADA) |
 | **Deductions** | Tools, subscriptions, hardware, training, certifications, travel — all deductible |
 
-> [!TIP]
-> **Section 44ADA** is a significant tax advantage for freelancers with receipts under ₹75 lakh. Only 50% of your revenue is taxable, and you don't need to maintain detailed books of accounts.
+<Callout>
+  **Section 44ADA** is a significant tax advantage for freelancers with receipts under ₹75 lakh. Only 50% of your revenue is taxable, and you don't need to maintain detailed books of accounts.
+</Callout>
 
 ### Essential Documents for Freelancers
 
@@ -646,8 +670,9 @@ Every engagement should have, at minimum:
 | **Cyber Liability** | Data breach liability, incident response costs |
 | **General Liability** | Bodily injury, property damage during on-site testing |
 
-> [!NOTE]
-> **India:** Companies like ICICI Lombard, Bajaj Allianz, and HDFC Ergo offer professional indemnity policies. Coverage of ₹25-50 lakh is a good starting point. Some clients (especially MNCs) require proof of insurance before signing contracts.
+<Callout type="info">
+  **India:** Companies like ICICI Lombard, Bajaj Allianz, and HDFC Ergo offer professional indemnity policies. Coverage of ₹25-50 lakh is a good starting point. Some clients (especially MNCs) require proof of insurance before signing contracts.
+</Callout>
 
 ### Certifications That Matter
 
@@ -660,8 +685,9 @@ Every engagement should have, at minimum:
 | **eJPT/eCPPT** (INE) | Entry-level → intermediate pentesting | Good for starting out |
 | **CISA/CISSP** | Governance, audit, management | High for compliance-driven engagements |
 
-> [!TIP]
-> **Indian corporates and government** often list CEH as a requirement in RFPs. While OSCP is more respected technically, having CEH can help you qualify for tenders.
+<Callout>
+  **Indian corporates and government** often list CEH as a requirement in RFPs. While OSCP is more respected technically, having CEH can help you qualify for tenders.
+</Callout>
 
 ### Bug Bounty Platforms
 
@@ -673,8 +699,9 @@ Every engagement should have, at minimum:
 | **Open Bug Bounty** | Free, community-driven |
 | **NCIIPC** (India) | National vulnerability disclosure for critical infra — [nciipc.gov.in](https://nciipc.gov.in) |
 
-> [!NOTE]
-> **NCIIPC** (National Critical Information Infrastructure Protection Centre) accepts responsible vulnerability disclosures for Indian critical infrastructure. Report vulnerabilities at their portal — this is a legitimate channel for reporting issues in government/critical systems.
+<Callout type="info">
+  **NCIIPC** (National Critical Information Infrastructure Protection Centre) accepts responsible vulnerability disclosures for Indian critical infrastructure. Report vulnerabilities at their portal — this is a legitimate channel for reporting issues in government/critical systems.
+</Callout>
 
 ### Pricing (Indian Market Reference)
 
@@ -689,8 +716,9 @@ Every engagement should have, at minimum:
 | Red team engagement | ₹5L - ₹20L+ |
 | Compliance VAPT (RBI/SEBI) | ₹1L - ₹5L |
 
-> [!CAUTION]
-> **Don't undersell yourself.** The Indian market has a race-to-the-bottom problem with VAPT pricing. Quality work at fair rates builds a sustainable career. Low-ball pricing attracts clients who don't value security.
+<Callout type="error">
+  **Don't undersell yourself.** The Indian market has a race-to-the-bottom problem with VAPT pricing. Quality work at fair rates builds a sustainable career. Low-ball pricing attracts clients who don't value security.
+</Callout>
 
 ### Finding Clients
 
@@ -716,8 +744,9 @@ Every engagement should have, at minimum:
 | **Separate accounts** | Dedicated email, phone number for business |
 | **Activity logging** | Log all testing activity with timestamps for legal protection |
 
-> [!IMPORTANT]
-> Always log your testing activities with timestamps. If a client's system goes down during your testing window, your logs prove what you did and didn't do. This has saved freelancers from false blame.
+<Callout type="important">
+  Always log your testing activities with timestamps. If a client's system goes down during your testing window, your logs prove what you did and didn't do. This has saved freelancers from false blame.
+</Callout>
 
 #pre-engagement #methodology #pentest #cpts #oscp
 
