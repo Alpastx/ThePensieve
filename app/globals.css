@@ -556,7 +556,7 @@ div:has(> select option[value="light"]) {
     min-width: unset;
   }
 
-  Table Mobile Fix
+  /* Table Mobile Fix */
   .dark table {
     display: block;
     overflow-x: auto;
@@ -663,49 +663,55 @@ div:has(> select option[value="light"]) {
 
 /* ===== CHECKBOXES (Task Lists) ===== */
 
+.dark li:has(> input[type="checkbox"]) {
+  list-style-type: none;
+  margin-left: -1.25rem;
+  margin-bottom: 0.25rem;
+}
+
 .dark input[type="checkbox"] {
   appearance: none;
   -webkit-appearance: none;
-  width: 1.125rem;
-  height: 1.125rem;
+  width: 1rem;
+  height: 1rem;
+  min-width: 1rem;
+  min-height: 1rem;
   background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.2);
+  border: 1.5px solid rgba(255, 255, 255, 0.25);
   border-radius: 4px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  top: 3px;
+  vertical-align: -0.125em;
+  margin-right: 0.5rem;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .dark input[type="checkbox"]:checked {
   background: #a855f7;
   border-color: #a855f7;
-  box-shadow: 0 0 10px rgba(168, 85, 247, 0.3);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.25);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 16 16' fill='white' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M12.207 4.793a1 1 0 010 1.414l-5 5a1 1 0 01-1.414 0l-2.5-2.5a1 1 0 011.414-1.414L6.5 9.086l4.293-4.293a1 1 0 011.414 0z'/%3E%3C/svg%3E");
+  background-size: 100% 100%;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
-.dark input[type="checkbox"]:checked::after {
-  content: "";
-  width: 5px;
-  height: 9px;
-  border: solid white;
-  border-width: 0 2px 2px 0;
-  transform: rotate(45deg);
-  position: absolute;
-  top: 2px;
-}
-
-.dark input[type="checkbox"]:focus {
+.dark input[type="checkbox"]:focus-visible {
   outline: 2px solid rgba(168, 85, 247, 0.5);
   outline-offset: 2px;
 }
 
-/* Task list items */
-.dark li:has(input[type="checkbox"]) {
-  list-style-type: none;
-  margin-left: -1.5rem;
+@media (max-width: 768px) {
+  .dark li:has(> input[type="checkbox"]) {
+    margin-left: 0;
+  }
+
+  .dark input[type="checkbox"] {
+    width: 1.125rem;
+    height: 1.125rem;
+    min-width: 1.125rem;
+    min-height: 1.125rem;
+    border-radius: 5px;
+  }
 }
 
 /* Global Selection Color */

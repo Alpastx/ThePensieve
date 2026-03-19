@@ -23,16 +23,36 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.in'
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
-  description: 'Security & pentesting reference — cheatsheets, methodology, and tools.',
+  description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
   metadataBase: new URL(siteUrl),
   icons: { icon: '/favicon.png' },
+  alternates: {
+    canonical: siteUrl,
+  },
   openGraph: {
     type: 'website',
     locale: 'en_US',
+    url: siteUrl,
+    siteName: 'The Pensieve',
+    title: 'The Pensieve',
+    description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
+  },
+  twitter: {
+    card: 'summary',
+    title: 'The Pensieve',
+    description: 'Security & pentesting reference — cheatsheets, methodology, and tools.',
+    creator: '@Alpastx',
   },
   robots: {
     index: true,
     follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
   },
 }
 
