@@ -24,8 +24,10 @@ export const Layout: FC<z.infer<typeof LayoutPropsSchema>> = ({
         <SkipNavLink />
         {banner}
         <ConfigProvider pageMap={pageMap} navbar={navbar} footer={footer}>
-          <MobileNav />
-          {children}
+          <>
+            <MobileNav />
+            {children}
+          </>
         </ConfigProvider>
       </ThemeProvider>
     </ThemeConfigProvider>

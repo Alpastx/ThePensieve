@@ -19,7 +19,7 @@ const spaceGrotesk = Space_Grotesk({
   variable: '--font-body',
 })
 
-const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.vercel.app'
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.in'
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
@@ -57,10 +57,10 @@ const footer = (
         <a key="github" href="https://github.com/Alpastx/ThePensieve" target="_blank" rel="noopener noreferrer">
           GitHub
         </a>
-        <a key="twitter" href="https://twitter.com" target="_blank" rel="noopener noreferrer">
+        <a key="twitter" href="https://x.com/Alpastx" target="_blank" rel="noopener noreferrer">
           Twitter
         </a>
-        <a key="linkedin" href="https://linkedin.com" target="_blank" rel="noopener noreferrer">
+        <a key="linkedin" href="https://www.linkedin.com/in/alpesh-bhagwatkar/" target="_blank" rel="noopener noreferrer">
           LinkedIn
         </a>
       </span>
