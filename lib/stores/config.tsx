@@ -4,7 +4,7 @@ import type { PageMapItem } from 'nextra'
 import { useFSRoute } from 'nextra/hooks'
 import { normalizePages } from 'nextra/normalize-pages'
 import type { FC, ReactNode } from 'react'
-import { createContext, useContext } from 'react'
+import { createContext, useContext, Fragment } from 'react'
 
 type NormalizePagesResult = ReturnType<typeof normalizePages>
 
@@ -41,9 +41,9 @@ export const ConfigProvider: FC<{
 
   return (
     <ConfigContext.Provider value={normalizedPages}>
-      {activeThemeContext.navbar && navbar}
-      {children}
-      {activeThemeContext.footer && footer}
+      <Fragment key="navbar">{activeThemeContext.navbar ? navbar : null}</Fragment>
+      <Fragment key="content">{children}</Fragment>
+      <Fragment key="footer">{activeThemeContext.footer ? footer : null}</Fragment>
     </ConfigContext.Provider>
   )
 }

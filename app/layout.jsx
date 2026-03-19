@@ -83,6 +83,9 @@ const footer = (
         <a key="linkedin" href="https://www.linkedin.com/in/alpesh-bhagwatkar/" target="_blank" rel="noopener noreferrer">
           LinkedIn
         </a>
+        <a key="Instagram" href="https://www.instagram.com/alpastx/" target="_blank" rel="noopener noreferrer">
+          Instagram
+        </a>
       </span>
     </div>
   </footer>

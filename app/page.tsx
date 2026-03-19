@@ -33,19 +33,43 @@ export default function Home() {
           Enter the Pensieve →
         </a>
 
+     <div className="pensieve-divider">
+        <span>References</span>
+      </div>
+
+      
         <img
           src="/harry-potter-dumbledore.gif"
           alt="Dumbledore at the Pensieve"
-          width={300}
-          height={300}
-          style={{ marginTop: "3rem", borderRadius: "12px", opacity: 0.8 }}
+          width={420}
+          height={420}
+          style={{ borderRadius: "12px", opacity: 0.8 }}
         />
       </section>
 
-
-
       <div className="pensieve-divider">
-        <span>Reference</span>
+        <span>Sponsors</span>
+      </div>
+
+      <div className="sponsor-grid">
+        <a
+          href="https://cyberunbound.com"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="phase-card sponsor-card"
+        >
+          <img src="/cyberunbound.webp" alt="CyberUnbound" className="sponsor-logo" />
+        </a>
+
+        <a
+          href="https://buymeacoffee.com/alpastx"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="phase-card sponsor-card sponsor-card--coffee"
+        >
+          <img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="Buy Me a Coffee" className="sponsor-logo" />
+          <p>Buy me a coffee to support this project</p>
+        </a>
       </div>
 
       <div className="ref-grid">
