@@ -1,0 +1,267 @@
+export const StatCard = ({ value, label, sub }) => (
+  <div style={{
+    background: "rgba(255,255,255,0.02)",
+    border: "1px solid rgba(168,85,247,0.15)",
+    borderRadius: "12px",
+    padding: "1.5rem",
+    textAlign: "center",
+    flex: "1",
+    minWidth: "140px",
+  }}>
+    <div style={{ fontSize: "2.5rem", fontWeight: "800", color: "#a855f7", letterSpacing: "-2px", fontFamily: "Instrument Serif, serif" }}>{value}</div>
+    <div style={{ fontSize: "0.8rem", color: "rgba(255,255,255,0.35)", marginTop: "0.25rem", textTransform: "uppercase", letterSpacing: "0.1em" }}>{label}</div>
+    {sub && <div style={{ fontSize: "0.72rem", color: "rgba(255,255,255,0.2)", marginTop: "0.4rem" }}>{sub}</div>}
+  </div>
+);
+
+export const DayCard = ({ day, title, time, children, highlight }) => (
+  <div style={{
+    display: "flex",
+    gap: "1.25rem",
+    margin: "1rem 0",
+    padding: "1.25rem",
+    background: highlight ? "rgba(168,85,247,0.05)" : "rgba(255,255,255,0.015)",
+    borderRadius: "10px",
+    border: `1px solid ${highlight ? "rgba(168,85,247,0.25)" : "rgba(255,255,255,0.06)"}`,
+    alignItems: "flex-start",
+  }}>
+    <div style={{ minWidth: "60px", textAlign: "center" }}>
+      <div style={{ fontSize: "0.6rem", color: "rgba(168,85,247,0.5)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Day</div>
+      <div style={{ fontSize: "2rem", fontWeight: "900", color: highlight ? "#a855f7" : "rgba(255,255,255,0.15)", lineHeight: 1, fontFamily: "Instrument Serif, serif" }}>{day}</div>
+      {time && <div style={{ fontSize: "0.62rem", color: "rgba(255,255,255,0.2)", marginTop: "0.25rem" }}>{time}</div>}
+    </div>
+    <div>
+      <div style={{ fontWeight: "600", fontSize: "0.95rem", marginBottom: "0.4rem", color: "#ededed" }}>{title}</div>
+      <div style={{ fontSize: "0.875rem", color: "rgba(255,255,255,0.45)", lineHeight: "1.65" }}>{children}</div>
+    </div>
+  </div>
+);
+
+export const Checklist = ({ items }) => (
+  <ul style={{ listStyle: "none", padding: 0, margin: "1rem 0" }}>
+    {items.map((item, i) => (
+      <li key={i} style={{
+        display: "flex",
+        alignItems: "flex-start",
+        gap: "0.75rem",
+        padding: "0.5rem 0",
+        borderBottom: "1px solid rgba(255,255,255,0.04)",
+        fontSize: "0.875rem",
+        color: "rgba(255,255,255,0.6)",
+        lineHeight: "1.6",
+      }}>
+        <span style={{ color: "#a855f7", marginTop: "3px", flexShrink: 0 }}>▸</span>
+        {item}
+      </li>
+    ))}
+  </ul>
+);
+
+import { Callout } from 'nextra/components'
+
+# i passed CJCA. here's everything i wish someone told me
+
+
+17th March. CJCA cleared. and i'm not gonna write one of those sterile "here's my cert journey" posts.
+this is a brain dump. messy, honest, and (hopefully) actually useful to someone who's grinding for this.
+
+## the numbers first
+
+<div style={{ display: "flex", gap: "1rem", flexWrap: "wrap", margin: "1.5rem 0" }}>
+  <StatCard value="5" label="Exam Days" sub="Started Feb 23, 6PM" />
+  <StatCard value="5" label="Machines" sub="User + Root each" />
+  <StatCard value="40" label="Alerts" sub="~27 to triage" />
+  <StatCard value="80" label="Min Points" sub="to pass" />
+</div>
+
+each machine flag = 10 pts. you need 80/100 minimum on the red side. but here's the thing nobody says out loud —
+
+<Callout type="error">
+  **even if you nail 100 points technically, a bad report can still fail you.** the report IS the exam. treat it like that from day one.
+</Callout>
+
+
+## my prep (honest version)
+
+i did the CJCA learning path on HTB. that's the baseline requirement and i'm not gonna pretend i did anything extra fancy.
+
+background context: i'm not really a blue team person. haven't explored it much. BUT i did a diploma project around the ELK stack so i wasn't going in completely blind. for red team — i was already solving machines regularly so nothing changed there.
+
+<Callout type="warning">
+  the HTB learning path is solid but it's thin on blue team hands-on time. you'll spend like 5-6 hours per blue module and that is NOT enough to get comfortable with ELK. i re-did the entire path once + doubled the blue modules because of self-doubt (yes, that's a real problem — don't let it spiral).
+</Callout>
+
+**what actually matters for prep:**
+
+<Checklist items={[
+  "Complete the full CJCA learning path on HTB — it's the floor, not the ceiling",
+  "Solve Easy + Medium Linux AND Windows machines on HTB. don't skip this.",
+  "Don't overcomplicate privilege escalation. the Penetration Testing Nutshell module covers everything you need.",
+  "Spend real time in Kibana. not tutorial-watching time — hands-on filtering, hunting, building queries from scratch.",
+  "Install SysReptor before the exam. do a full mock report on a random machine. thank me later.",
+]} />
+
+
+## the 5-day timeline
+
+<DayCard day="1" title="Rooted 3 machines in one sitting" time="6PM → 4AM">
+  pushed on feb 23 around 6pm. didn't overthink anything. trusted the process.
+  got root on 3 machines by 4AM. decided to call it and sleep instead of pushing through fatigue.
+</DayCard>
+
+<DayCard day="2" title="Recovered properly, then finished red team" time="12PM → night">
+  woke up at noon. ate. went to the gym. came back fresh at 6PM.
+  cleared the last 2 machines on the red side. this is what recovery looks like — not grinding 40 hours straight.
+</DayCard>
+
+<DayCard day="3" title="Report writing + SysReptor struggle" time="Full day">
+  started prepping the report using SysReptor. genuinely hard to figure out at first.
+  binged a tutorial for about an hour, understood the structure, then got comfortable fast since i know markdown.
+  then... hit the blue team section and had a moment of "okay i give up this is complicated."
+  spoiler: i didn't give up.
+</DayCard>
+
+<DayCard day="4" title="Blue team breakthrough" time="Fresh morning start" highlight={true}>
+  started with a completely fresh mind. went back to my notes, re-watched ELK stuff on YT, re-read the HTB modules.
+  collected all the evidence methodically, pieced it all together, finished the second half of the report.
+  done with everything by end of day. anxious? yes. underconfident on blue team? very yes. but done.
+</DayCard>
+
+<DayCard day="5" title="Polish pass" time="Final review">
+  spent the whole day redoing everything. looking for gaps. polishing the report to within an inch of its life.
+  submitted feeling like i'd done everything i could.
+</DayCard>
+
+
+## exam structure: what you're actually doing
+
+### 🔴 Red Team
+5 machines. get User + Root on each. 10 pts per flag. straightforward if you've been solving machines regularly. don't overthink the priv esc — the module covers it.
+
+### 🔵 Blue Team
+
+this is the part people sleep on and shouldn't.
+
+~40 alerts in the queue. you need to analyze around 27 of them. for each one, you mark it **FP (False Positive)** or **TP (True Positive)** and write a clear explanation.
+
+the cool part? **the traces from your own red team actions show up in the blue team alerts.** you're literally hunting yourself. which means if you did something on day 1, you should be able to explain exactly what alert it triggered and why on day 4.
+
+<Callout type="info">
+  that correlation between red and blue is what makes CJCA actually interesting vs just another box-popping cert.
+</Callout>
+
+
+## reporting: don't sleep on SysReptor
+
+<Callout>
+  read this before the exam: [HTB CJCA Sample Report (SysReptor)](https://docs.sysreptor.com/assets/reports/HTB-CJCA-Report.pdf)
+</Callout>
+
+- install SysReptor before exam day. set up a CJCA template.
+- every finding = screenshot + reproducible steps. no exceptions.
+- if you know markdown, SysReptor becomes comfortable fast — but you need to learn the UI first, not mid-exam.
+- collect outputs and screenshots as you go. going back to reconstruct them under stress is rough.
+
+
+ 
+## the modules: my way of learning
+ 
+not all modules are equal. here's how i'd split them up —
+ 
+<ModuleGroup
+  title="Primers — connect the dots before everything else"
+  color="#22c55e"
+  badge="do these first"
+  modules={[
+    "Intro to Information Security",
+    "Network Foundations",
+    "Introduction to Networking",
+    "Linux Fundamentals",
+    "Intro to Bash Scripting",
+    "Windows Fundamentals",
+    "Web Requests",
+    "Intro to Web Apps",
+    "Intro to Penetration Testing",
+    "Intro to Network Traffic Analysis",
+    "Incident Handling Process",
+  ]}
+/>
+ 
+these won't feel directly exam-relevant but they're what make everything else click. don't skip them thinking you already know the stuff — go through them anyway.
+ 
+<ModuleGroup
+  title="Core exam modules — you'll actually use these"
+  color="#f97316"
+  badge="use during exam"
+  modules={[
+    "Intro to Windows Command Line",
+    "Penetration Testing in a Nutshell",
+    "Network Enumeration with Nmap",
+    "Footprinting",
+    "Hacking WordPress",
+    "Using Metasploit",
+  ]}
+/>
+ 
+<ModuleGroup
+  title="Blue team deep dives — spend more time here than you think"
+  color="#38bdf8"
+  badge="spend extra time"
+  modules={[
+    "Windows Event Logs & Finding Evil",
+    "Security Monitoring & SIEM Fundamentals",
+    "Intro to Threat Hunting & Hunting with Elastic",
+  ]}
+/>
+ 
+<Callout type="warning">
+  seriously — the blue team modules are where most people underinvest. the path gives you enough to understand the concepts but not enough to get your hands dirty. go beyond the modules. open up a lab, generate some noise, and hunt it yourself.
+</Callout>
+
+
+## what i'd do differently
+
+<Checklist items={[
+  "Spent more time on blue team. panicked a lot during that phase and it was avoidable.",
+  "More real Kibana practice — not just watching, actually building queries and hunting through logs.",
+  "Read the sample SysReptor CJCA report before day one: https://docs.sysreptor.com/assets/reports/HTB-CJCA-Report.pdf",
+  "Practiced SysReptor on a dummy report before the clock started.",
+  "Done these SIEM labs earlier: github.com/ChickenLoner/Awesome-Splunk-and-Elastic-SIEM-Practice-Labs (recommended by HTB community)",
+]} />
+
+<Callout>
+Done these SIEM labs earlier: [Awesome-Splunk-and-Elastic-SIEM-Practice-Labs](https://github.com/ChickenLoner/Awesome-Splunk-and-Elastic-SIEM-Practice-Labs) (recommended by HTB community)
+</Callout>
+
+## what about AI?
+ 
+honestly? it comes down to your ethics.
+ 
+i didn't care about using AI during the exam. i've always seen HTB as a learning opportunity first — the cert is just a byproduct of actually getting good. if you're using AI to skip the understanding, you're only cheating the learning, not the exam.
+ 
+<Callout type="info">
+  if you're doing this to actually get better at security — use AI as a tool, not a crutch. if you're doing this just to collect a badge, that's a you problem.
+</Callout>
+
+
+## tldr for people who scrolled here first
+
+- do the HTB path but don't stop there — solve machines, do extra ELK labs
+- blue team is where people get caught off guard. take it seriously
+- the report is not optional fluff. it's the whole thing
+- sleep, eat, gym during the exam. recovery is a strategy
+- learn SysReptor before day one. set up the template. read the sample report
+- trust your prep. the self-doubt spiral is real and a waste of energy
+
+
+*passed on 17th march. if you're grinding for this — you got it. just don't skip the blue team homework.*
+
+<div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "2rem", marginTop: "1rem" }}>
+  <TagPill>HTB</TagPill>
+  <TagPill color="#38bdf8">Blue Team</TagPill>
+  <TagPill color="#f97316">Red Team</TagPill>
+  <TagPill color="#c084fc">Elk Stack</TagPill>
+  <TagPill color="#c084fc">SysReptor</TagPill>
+  <TagPill color="#c084fc">Kibana</TagPill>
+  <TagPill color="#c084fc">Splunk</TagPill>
+</div>

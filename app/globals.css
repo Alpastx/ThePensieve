@@ -777,3 +777,21 @@ div:has(> select option[value="light"]) {
   background: rgba(168, 85, 247, 0.3);
   color: inherit;
 }
+
+/* ===== TAG PILLS (MDX / content) ===== */
+
+.pensieve-tag-pill {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-right: 0.4rem;
+  margin-bottom: 0.25rem;
+  color: var(--pensieve-tag-pill-color, #a855f7);
+  background: color-mix(in srgb, var(--pensieve-tag-pill-color, #a855f7) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--pensieve-tag-pill-color, #a855f7) 28%, transparent);
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
+}

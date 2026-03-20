@@ -79,4 +79,8 @@ export default {
         type: 'separator',
         title: 'Blogs'
     },
+    "cjca" : {
+        title: 'CJCA',
+        href: '/CJCA'
+    },
 }
