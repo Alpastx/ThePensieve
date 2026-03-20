@@ -33,9 +33,15 @@ export default {
     },
     '##': {
         type: 'separator',
-        title: 'Blue-Teaming'
+        title: 'Certifications'
     },
-
+    'Certifications' : {
+        display: 'hidden'
+    },
+    'cert-cjca' : {
+        title: 'CJCA',
+        href: '/Certifications/cjca',
+    },
     '###': {
         type: 'separator',
         title: 'CVE-Research'
@@ -78,9 +84,5 @@ export default {
     '######': {
         type: 'separator',
         title: 'Blogs'
-    },
-    "cjca" : {
-        title: 'CJCA',
-        href: '/CJCA'
     },
 }

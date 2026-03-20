@@ -1,3 +1,5 @@
+# CJCA : Here's everything i wish someone told me
+
 export const StatCard = ({ value, label, sub }) => (
   <div style={{
     background: "rgba(255,255,255,0.02)",
@@ -58,9 +60,6 @@ export const Checklist = ({ items }) => (
 );
 
 import { Callout } from 'nextra/components'
-
-# i passed CJCA. here's everything i wish someone told me
-
 
 17th March. CJCA cleared. and i'm not gonna write one of those sterile "here's my cert journey" posts.
 this is a brain dump. messy, honest, and (hopefully) actually useful to someone who's grinding for this.
@@ -135,14 +134,22 @@ background context: i'm not really a blue team person. haven't explored it much.
 
 ## exam structure: what you're actually doing
 
-### 🔴 Red Team
-5 machines. get User + Root on each. 10 pts per flag. straightforward if you've been solving machines regularly. don't overthink the priv esc — the module covers it.
+---
 
-### 🔵 Blue Team
+<Callout type="error"> ⚔️ Red Team </Callout>
+- 5 machines. 
+- get User + Root on each. 
+- 10 pts per flag. 
+
+straightforward if you've been solving machines regularly. don't overthink the priv esc — the module covers it.
+
+<Callout type="info"> ⚔️ Blue Team </Callout>
 
 this is the part people sleep on and shouldn't.
 
-~40 alerts in the queue. you need to analyze around 27 of them. for each one, you mark it **FP (False Positive)** or **TP (True Positive)** and write a clear explanation.
+- 40 alerts in the queue. 
+- you need to analyze around 27 of them. 
+- for each one, you mark it **FP (False Positive)** or **TP (True Positive)** and write a clear explanation.
 
 the cool part? **the traces from your own red team actions show up in the blue team alerts.** you're literally hunting yourself. which means if you did something on day 1, you should be able to explain exactly what alert it triggered and why on day 4.
 
