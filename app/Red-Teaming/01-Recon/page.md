@@ -1,4 +1,3 @@
-# Infrastructure Enumeration
+# 01-Recon
 
-> Content coming soon. Drop your notes here.
-
+Coming soon.

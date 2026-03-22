@@ -1,4 +1,3 @@
-# Infrastructure Enumeration
+# hydra
 
-> Content coming soon. Drop your notes here.
-
+Coming soon.

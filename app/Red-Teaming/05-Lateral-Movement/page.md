@@ -1,4 +1,3 @@
-# Infrastructure Enumeration
+# 05-Lateral-Movement
 
-> Content coming soon. Drop your notes here.
-
+Coming soon.
