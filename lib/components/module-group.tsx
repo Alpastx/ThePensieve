@@ -14,6 +14,7 @@ export const ModuleGroup: FC<ModuleGroupProps> = ({
   modules
 }) => (
   <div
+    className="pensieve-module-group"
     style={{
       border: `1px solid ${color}30`,
       borderRadius: '12px',
@@ -22,46 +23,30 @@ export const ModuleGroup: FC<ModuleGroupProps> = ({
     }}
   >
     <div
+      className="pensieve-module-group__header"
       style={{
         background: color + '12',
-        padding: '0.75rem 1.25rem',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '0.75rem',
         borderBottom: `1px solid ${color}20`
       }}
     >
-      <span style={{ fontWeight: '700', fontSize: '0.88rem' }}>{title}</span>
+      <span className="pensieve-module-group__title">{title}</span>
       <span
+        className="pensieve-module-group__badge"
         style={{
-          fontSize: '0.65rem',
-          fontWeight: '600',
           background: color + '25',
           color,
           padding: '0.15rem 0.5rem',
-          borderRadius: '999px',
-          letterSpacing: '0.06em',
-          textTransform: 'uppercase'
+          borderRadius: '999px'
         } as CSSProperties}
       >
         {badge}
       </span>
     </div>
-    <div style={{ padding: '0.5rem 0' }}>
+    <div className="pensieve-module-group__list">
       {modules.map((m, i) => (
-        <div
-          key={i}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.45rem 1.25rem',
-            fontSize: '0.85rem',
-            opacity: 0.85
-          }}
-        >
+        <div key={i} className="pensieve-module-group__row">
           <span style={{ color, fontSize: '0.6rem', flexShrink: 0 }}>▸</span>
-          {m}
+          <span className="pensieve-module-group__row-text">{m}</span>
         </div>
       ))}
     </div>

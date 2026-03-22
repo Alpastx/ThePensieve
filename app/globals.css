@@ -636,6 +636,140 @@ div:has(> select option[value="light"]) {
 }
 
 
+/* ===== Credly badge embed ===== */
+
+.pensieve-credly-badge {
+  position: relative;
+  margin: 1.5rem 0 2rem;
+  max-width: 22rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(168, 85, 247, 0.15);
+  background: #000000;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+}
+
+.pensieve-credly-badge::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+      transparent,
+      rgba(168, 85, 247, 0.35),
+      transparent);
+  z-index: 1;
+}
+
+.pensieve-credly-badge__label {
+  font-family: "Instrument Serif", Georgia, serif;
+  font-size: 0.75rem;
+  font-style: italic;
+  color: rgba(255, 255, 255, 0.25);
+  padding: 0.75rem 1rem 0;
+  letter-spacing: 0.02em;
+}
+
+.pensieve-credly-badge__inner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0.5rem 1rem 1.25rem;
+}
+
+.pensieve-credly-badge__inner iframe {
+  border-radius: 0.5rem !important;
+  border: 1px solid rgba(255, 255, 255, 0.06) !important;
+}
+
+/* ModuleGroup (MDX) — mobile: block layout so title/badge never stretch with weird flex gaps */
+.pensieve-module-group__header {
+  display: block;
+  padding: 0.75rem 1rem;
+}
+
+.pensieve-module-group__title {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin: 0 0 0.5rem;
+  font-weight: 700;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #ededed;
+}
+
+.pensieve-module-group__badge {
+  display: inline-block;
+  vertical-align: top;
+  max-width: 100%;
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.25;
+  word-break: break-word;
+}
+
+/* Wide desktop: title + badge in one row */
+@media (min-width: 900px) {
+  .pensieve-module-group__header {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 1rem;
+  }
+
+  .pensieve-module-group__title {
+    display: block;
+    flex: 1;
+    width: auto;
+    min-width: 0;
+    margin: 0;
+    padding-right: 0.5rem;
+  }
+
+  .pensieve-module-group__badge {
+    flex-shrink: 0;
+    max-width: 42%;
+  }
+}
+
+@media (max-width: 640px) {
+  .pensieve-module-group__header {
+    padding: 0.65rem 0.85rem;
+  }
+}
+
+.pensieve-module-group__list {
+  padding: 0.5rem 0;
+}
+
+.pensieve-module-group__row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.45rem 1rem;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+@media (max-width: 640px) {
+  .pensieve-module-group__row {
+    padding: 0.45rem 0.85rem;
+  }
+}
+
+.pensieve-module-group__row-text {
+  min-width: 0;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
 /* ===== HR / Dividers & Heading Borders ===== */
 
 .dark hr {
