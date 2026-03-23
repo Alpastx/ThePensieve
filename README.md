@@ -9,7 +9,7 @@ pnpm install
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). The root redirects to `/resources`.
+Open [http://localhost:3000](http://localhost:3000) — the **home page** is the landing (`app/page.tsx`). Docs live under routes like `/Red-Teaming/...` and `/Tools/...`, not `/resources`.
 
 ## Scripts
 
@@ -36,7 +36,7 @@ Open [http://localhost:3000](http://localhost:3000). The root redirects to `/res
 ## Project structure
 
 - `app/` — Layout, pages, metadata, robots, sitemap
-- `app/resources/` — MDX docs (Nmap cheatsheet, etc.)
+- `app/Red-Teaming/`, `app/Tools/`, `app/Certifications/`, etc. — MDX/Markdown docs
 - `lib/` — Nextra theme components and stores
 - `public/` — Static assets; `_pagefind/` is generated at build time for search
 

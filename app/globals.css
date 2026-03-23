@@ -413,6 +413,14 @@ article,
   opacity: 1;
 }
 
+/* <button> used as .phase-card (e.g. coffee placeholder) — reset native button chrome */
+button.phase-card {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+  text-align: inherit;
+}
+
 .phase-number {
   display: block;
   font-family: "Instrument Serif", serif;

@@ -1,4 +1,5 @@
-
+import Image from 'next/image'
+import { CoffeeSponsorPlaceholder } from '../lib/components/coffee-sponsor-placeholder'
 const references: Array<{ title: string; description: string; href: string }> =
   [];
 
@@ -37,8 +38,7 @@ export default function Home() {
         <span>References</span>
       </div>
 
-      
-        <img
+        <Image
           src="/harry-potter-dumbledore.gif"
           alt="Dumbledore at the Pensieve"
           width={420}
@@ -58,18 +58,16 @@ export default function Home() {
           rel="noopener noreferrer"
           className="phase-card sponsor-card"
         >
-          <img src="/cyberunbound.webp" alt="CyberUnbound" className="sponsor-logo" />
+          <Image
+            src="/cyberunbound.webp"
+            alt="CyberUnbound"
+            width={180}
+            height={120}
+            className="sponsor-logo"
+          />
         </a>
 
-        <a
-          href="https://buymeacoffee.com/alpastx"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="phase-card sponsor-card sponsor-card--coffee"
-        >
-          <img src="https://cdn.buymeacoffee.com/buttons/bmc-new-btn-logo.svg" alt="Buy Me a Coffee" className="sponsor-logo" />
-          <p>Buy me a coffee to support this project</p>
-        </a>
+        <CoffeeSponsorPlaceholder />
       </div>
 
       <div className="ref-grid">

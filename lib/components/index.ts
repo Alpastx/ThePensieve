@@ -1,5 +1,6 @@
 export { Breadcrumb } from './breadcrumb'
 export { CredlyBadge } from './credly-badge'
+export { CoffeeSponsorPlaceholder } from './coffee-sponsor-placeholder'
 export { CopyPage } from './copy-page'
 export { Footer } from './footer'
 export { LastUpdated } from './last-updated'
