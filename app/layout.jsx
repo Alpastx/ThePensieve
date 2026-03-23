@@ -3,6 +3,7 @@ import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import { Instrument_Serif, Space_Grotesk } from 'next/font/google'
 import Image from 'next/image'
+import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
 import { Analytics } from '@vercel/analytics/next';
@@ -20,6 +21,9 @@ const spaceGrotesk = Space_Grotesk({
 })
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.in'
+
+/** Set in `.env` as NEXT_PUBLIC_GA_MEASUREMENT_ID (e.g. G-XXXXXXXXXX) */
+const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
@@ -103,6 +107,22 @@ export default async function RootLayout({ children }) {
     >
       <Head />
       <body>
+        {gaMeasurementId ? (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaMeasurementId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-analytics" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${gaMeasurementId}');
+              `}
+            </Script>
+          </>
+        ) : null}
         <Analytics />
         <Layout
           navbar={navbar}
