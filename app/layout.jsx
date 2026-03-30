@@ -25,6 +25,10 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.in'
 /** Set in `.env` as NEXT_PUBLIC_GA_MEASUREMENT_ID (e.g. G-XXXXXXXXXX) */
 const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
 
+/** Microsoft Clarity — override with NEXT_PUBLIC_CLARITY_PROJECT_ID */
+const clarityProjectId =
+  process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID 
+
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
   description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
@@ -122,6 +126,17 @@ export default async function RootLayout({ children }) {
               `}
             </Script>
           </>
+        ) : null}
+        {clarityProjectId ? (
+          <Script id="microsoft-clarity" strategy="afterInteractive">
+            {`
+              (function(c,l,a,r,i,t,y){
+                c[a]=c[a]||function(){(c[a].q=c[a].q||[]).push(arguments)};
+                t=l.createElement(r);t.async=1;t.src="https://www.clarity.ms/tag/"+i;
+                y=l.getElementsByTagName(r)[0];y.parentNode.insertBefore(t,y);
+              })(window, document, "clarity", "script", "${clarityProjectId}");
+            `}
+          </Script>
         ) : null}
         <Analytics />
         <Layout
