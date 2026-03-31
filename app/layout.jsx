@@ -7,6 +7,7 @@ import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
 import { Analytics } from '@vercel/analytics/next';
+import { Banner } from 'nextra/components'
 
 const instrumentSerif = Instrument_Serif({
   subsets: ['latin'],
@@ -28,6 +29,13 @@ const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID
 /** Microsoft Clarity — override with NEXT_PUBLIC_CLARITY_PROJECT_ID */
 const clarityProjectId =
   process.env.NEXT_PUBLIC_CLARITY_PROJECT_ID 
+const siteBanner = (
+  <Banner storageKey="Site-under-construction-banner">
+    <p>
+      Site is under construction if theres any issues, please contact me at 
+    </p>
+  </Banner>
+)
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
@@ -140,6 +148,7 @@ export default async function RootLayout({ children }) {
         ) : null}
         <Analytics />
         <Layout
+          banner={siteBanner}
           navbar={navbar}
           pageMap={await getPageMap()}
           docsRepositoryBase={docsRepo}
