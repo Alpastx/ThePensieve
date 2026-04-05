@@ -14,7 +14,7 @@ import { useMDXComponents as getNextraMDXComponents } from 'nextra/mdx-component
 import type { UseMDXComponents } from 'nextra/mdx-components'
 import { removeLinks } from 'nextra/remove-links'
 import type { FC, HTMLAttributes, ReactNode } from 'react'
-import { CredlyBadge, ModuleGroup, Sidebar, TagPill } from '../components'
+import { ModuleGroup, Quiz, Sidebar, TagPill } from '../components'
 import { TOCProvider } from '../stores'
 import { H1, H2, H3, H4, H5, H6 } from './heading'
 import { Link } from './link'
@@ -63,8 +63,8 @@ const DEFAULT_COMPONENTS = getNextraMDXComponents({
   p: props => <p className="x:not-first:mt-[1.25em] x:leading-7" {...props} />,
   pre: withIcons(Pre),
   summary: Summary,
-  CredlyBadge,
   ModuleGroup,
+  Quiz,
   TagPill,
   table: ({ className, ...props }) => (
     <Table

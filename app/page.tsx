@@ -6,17 +6,12 @@ const references: Array<{ title: string; description: string; href: string }> =
 export default function Home() {
   return (
     <div className="pensieve-landing">
-      <div className="hero-glow" />
-
       <section className="pensieve-hero">
         <img
-          src="/favicon.png"
-          alt="The Pensieve Basin"
-          width={96}
-          height={96}
-          className="hero-logo"
+          src="/mystic-logo.png"
+          alt="The Pensieve"
+          className="hero-title-logo"
         />
-        <h1>The Pensieve</h1>
 
         <p className="quote">
           &ldquo;I use the Pensieve. One simply siphons the excess thoughts from

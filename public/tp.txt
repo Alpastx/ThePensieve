@@ -1,0 +1,752 @@
+import { Callout } from 'nextra/components'
+
+## red-Cheatsheet
+
+| Document | Purpose |
+|----------|---------|
+| **NDA** | Confidentiality - must be signed first |
+| **MSA** | Master Services Agreement (ongoing relationship) |
+| **SOW** | Statement of Work (project-specific) |
+| **RoE** | Rules of Engagement - "Get Out of Jail Free" letter |
+| **Authorization Letter** | Explicit written permission to test |
+| **Scoping Questionnaire** | Gather client requirements |
+| **Scoping Document** | Defines what, how, when, limits |
+| **Incident Response Plan** | Emergency procedures, contacts |
+
+---
+
+## Goals of Penetration Testing
+
+<Callout type="info">
+  **Ask the client:**
+  - What is the client trying to achieve with this test?
+  - What regulatory or compliance requirements are driving this engagement?
+  - Is the focus on finding vulnerabilities, testing defenses, or assessing business impact?
+</Callout>
+
+### Primary Goal Categories
+
+| Category | Focus |
+|----------|-------|
+| **Security Posture Evaluation** | Assess the organization's overall cybersecurity maturity |
+| **Defensive Measures Testing** | Validate whether existing security controls actually work |
+| **Risk Assessment** | Evaluate potential operational and financial impact of a breach |
+
+### Detailed Objectives
+
+| Objective | What It Means |
+|-----------|---------------|
+| **Identify Security Weaknesses** | Uncover misconfigurations, software flaws, design weaknesses, and human vulnerabilities |
+| **Validate Security Controls** | Attempt to bypass security mechanisms to verify they work as intended |
+| **Test Detection & Response** | Determine if the organization can detect and respond to security incidents |
+| **Assess Real-World Impact** | Simulate attacks to understand potential data loss, system compromise, or business disruption |
+| **Prioritize Remediation** | Help the organization allocate resources to fix the most critical issues first |
+| **Compliance & Due Diligence** | Satisfy regulatory requirements (PCI DSS, HIPAA, SOC 2, etc.) |
+| **Enhance Security Awareness** | Reveal risks that aren't apparent through other means |
+| **Verify Patch Management** | Confirm patches and updates are properly applied and effective |
+| **Test New Technologies** | Ensure new systems are securely configured before production deployment |
+| **Establish Baseline** | Create a measurable starting point for tracking security improvements over time |
+
+---
+
+## Pre-Engagement Checklist
+
+<Callout type="important">
+  **Complete this before any testing.** No exceptions. Verbal approval is not sufficient.
+</Callout>
+
+### Phase 1: Legal Foundation
+- [ ] Sign NDA with client
+- [ ] Obtain signed authorization letter / permission to test
+- [ ] Sign MSA (if ongoing relationship) or SOW (per engagement)
+- [ ] Secure RoE document with explicit IPs, domains, testing windows
+
+### Phase 2: Scope Definition
+- [ ] Complete scoping questionnaire
+- [ ] Create scoping document (what, how, when, limits)
+- [ ] Document all systems in scope (IPs, domains, apps)
+- [ ] Document off-limits systems (critical infra, medical, backup, etc.)
+- [ ] Define testing windows (after hours, weekends, maintenance)
+- [ ] Clarify: social engineering allowed? Physical access?
+
+### Phase 3: Technical Preparation
+- [ ] Gather technical info (network diagrams, asset inventory - white-box)
+- [ ] Identify OS versions, applications, security controls
+- [ ] Document sensitive systems (HIPAA, PCI DSS, GDPR)
+- [ ] Confirm third-party/cloud authorization if applicable
+
+### Phase 4: Communication & Emergency
+- [ ] Obtain contact list (technical, PM, emergency)
+- [ ] Define escalation procedures
+- [ ] Create incident response plan
+- [ ] Establish communication channels (email, secure messaging, ticketing)
+
+### Phase 5: Environment & Logistics
+- [ ] Set up clean testing VM/workspace (no cross-contamination)
+- [ ] Verify tools are licensed and up-to-date
+- [ ] Confirm client has backups of in-scope systems
+- [ ] Establish deliverables format and reporting requirements
+- [ ] Define timeline and responsibilities
+
+### Phase 6: Final Verification
+- [ ] Review professional liability insurance
+- [ ] Confirm data handling procedures
+- [ ] Get written approval to begin testing
+
+---
+
+## Penetration Testing Process
+
+<Callout type="important">
+  A penetration test follows a structured, methodical process designed to systematically identify and document security vulnerabilities. This approach ensures maximum efficiency, meticulous documentation, and actionable findings for the client.
+</Callout>
+
+
+### Phase 1: Pre-Engagement
+
+Sets the foundation for the entire test. Work with the client to understand their needs, define scope, establish timelines, and determine target systems.
+
+- Create RoE, NDA, SOW/MSA
+- Define testing windows and emergency procedures
+- Identify key personnel and contacts
+
+<Callout>
+  See the [Pre-Engagement Checklist](#Pre-Engagement%20Checklist) section below for the full step-by-step.
+</Callout>
+
+### Phase 2: Information Gathering
+
+Collect as much relevant information about the target as possible.
+
+| Type | Description | Risk to Target |
+|------|-------------|:--------------:|
+| **Passive** | Public records, social media, OSINT tools, company websites | None |
+| **Active** | Port scanning, service enumeration, banner grabbing | Detectable |
+
+- **Passive** — leaves no trace, no direct interaction with target systems
+- **Active** — direct interaction, provides detailed technical info but may trigger alerts
+
+### Phase 3: Vulnerability Assessment
+
+Analyze gathered information to identify potential security weaknesses using automated scanners and manual techniques.
+
+- Not just running automated scanners — skilled analysis required
+- Eliminate false positives
+- Understand how vulnerabilities can be chained together
+- Requires deep technical knowledge of systems and applications
+
+### Phase 4: Exploitation
+
+Attempt to actively exploit identified vulnerabilities to demonstrate real-world impact.
+
+- Follow the agreed-upon Rules of Engagement
+- Document all activities precisely
+- Avoid causing damage to production systems
+- Build attack chains showing how multiple vulns combine for deeper access
+
+### Phase 5: Post-Exploitation
+
+After initial access: privilege escalation, lateral movement, data exfiltration testing, maintaining persistence.
+
+- Understand the full extent of what an attacker could accomplish
+- Document everything meticulously
+- Maintain regular communication with client technical team
+- Prevent accidental outages or data loss
+
+### Phase 6: Lateral Movement
+
+Navigate through the network to discover additional systems, resources, and targets.
+
+- Exploit trust relationships between systems
+- Credential harvesting, pass-the-hash, network protocol exploitation
+- Demonstrates how an attacker could spread through the organization
+
+### Phase 7: Proof of Concept
+
+Create documentation and evidence demonstrating how vulnerabilities were exploited.
+
+- Reliable, repeatable exploitation methods
+- Step-by-step procedures with required tools and conditions
+- Helps client's security team understand and fix vulnerabilities
+- Scripts or code that showcase the exploitation process
+
+### Phase 8: Reporting
+
+Transform technical findings into actionable information.
+
+| Report Section | Audience |
+|---------------|----------|
+| **Executive Summary** | Management / C-suite |
+| **Technical Findings** | IT / Security team |
+| **Remediation Steps** | Engineers / Developers |
+
+- Each vulnerability: description, impact, reproduction steps, fix recommendation
+- Evidence: screenshots, logs, PoC code
+- Risk ratings to prioritize remediation
+
+### Phase 9: Remediation Support & Retesting
+
+- Answer questions about findings
+- Guide implementation of fixes
+- Retest to verify fixes were applied correctly
+- Confirm no new vulnerabilities were introduced during remediation
+
+---
+
+## Legal Authorization
+
+### MSA vs SOW
+
+| Aspect | MSA | SOW |
+|--------|-----|-----|
+| **Purpose** | Overall business relationship terms | Project-specific engagement details |
+| **Scope** | Broad (payment, confidentiality, liability) | Narrow (objectives, scope, deliverables) |
+| **Use Case** | Ongoing/multiple engagements | Each new project |
+| **Duration** | Long-term | Short-term, project duration |
+| **Flexibility** | Consistent across engagements | Tailored per engagement |
+| **Authorization** | Framework for services | Explicit permission for specific pentest |
+
+<Callout type="error">
+  **Never test without written authorization.** Verbal approval = no legal protection. Get it in writing.
+</Callout>
+
+### Rules of Engagement (RoE)
+
+The RoE is your "Get Out of Jail Free" letter. It must include:
+
+- Specific IP ranges, domains, systems in scope
+- Testing windows (when you can test)
+- Prohibited activities (e.g., no DoS, no physical access)
+- Contact information for key personnel
+- Emergency procedures
+- Evidence handling requirements
+
+### Third-Party Authorization
+
+<Callout type="important">
+  **Cloud-hosted infrastructure** requires separate authorization from the cloud provider (AWS, Azure, GCP, etc.). Each has a process for pentest notification/approval. Check their security/testing policy before including cloud assets in scope.
+</Callout>
+
+### Indian Legal Framework
+
+<Callout type="error">
+  **Operating in India** — unauthorized access to computer systems is a criminal offense under the Information Technology Act, 2000. Always have written authorization before any testing activity.
+</Callout>
+
+#### IT Act 2000 — Key Sections for Pentesters
+
+| Section | Offense | Penalty |
+|---------|---------|--------|
+| **Section 43** | Unauthorized access, downloading, introducing virus, causing damage to computer systems | Compensation up to ₹5 crore |
+| **Section 65** | Tampering with computer source documents | Up to 3 years imprisonment + ₹2 lakh fine |
+| **Section 66** | Computer-related offenses (hacking with criminal intent) | Up to 3 years imprisonment + ₹5 lakh fine |
+| **Section 66B** | Receiving stolen computer resource or data | Up to 3 years imprisonment + ₹1 lakh fine |
+| **Section 66C** | Identity theft using another person's credentials | Up to 3 years imprisonment + ₹1 lakh fine |
+| **Section 66F** | Cyber terrorism | Imprisonment up to life |
+| **Section 69** | Power of govt to intercept, monitor, or decrypt information | N/A (government authority) |
+| **Section 72** | Breach of confidentiality and privacy | Up to 2 years imprisonment + ₹1 lakh fine |
+| **Section 43A** | Failure to protect sensitive personal data (corporate negligence) | Compensation to affected persons |
+
+<Callout type="important">
+  **Section 43 vs Section 66:** Section 43 is civil (compensation), Section 66 is criminal (imprisonment). Unauthorized pentesting without written authorization can attract **both**.
+</Callout>
+
+#### CERT-In (Indian Computer Emergency Response Team)
+
+- **Mandatory incident reporting** — Under CERT-In Directions (April 2022), all organizations must report cybersecurity incidents to CERT-In within **6 hours** of detection
+- If your pentest triggers an incident response or you discover evidence of a prior breach, the client may have a **legal obligation** to report to CERT-In
+- CERT-In can request information about any cybersecurity incident from any service provider
+- Report incidents at: [https://www.cert-in.org.in](https://www.cert-in.org.in)
+
+#### DPDP Act 2023 (Digital Personal Data Protection)
+
+| Aspect | Requirement |
+|--------|-------------|
+| **Data Fiduciary obligations** | Client must ensure personal data accessed during testing is protected |
+| **Consent** | Processing personal data (even during testing) requires lawful basis |
+| **Data breach notification** | Must notify Data Protection Board of India + affected individuals |
+| **Cross-border transfer** | Personal data can only be transferred to notified countries |
+| **Penalties** | Up to ₹250 crore for significant non-compliance |
+
+<Callout>
+  **For pentesters in India:** Your NDA and SOW should explicitly reference the IT Act 2000 and DPDP Act 2023. Include a clause that the engagement is conducted under Section 43 exemption (authorized testing). This protects you legally.
+</Callout>
+
+#### Indian Industry-Specific Compliance
+
+| Regulator | Sector | Requirement |
+|-----------|--------|-------------|
+| **RBI** (Reserve Bank of India) | Banking & Finance | Mandates periodic VAPT (Vulnerability Assessment & Penetration Testing) for banks, NBFCs, and payment systems |
+| **SEBI** | Securities & Stock Markets | Cybersecurity framework requires regular security assessments for stock exchanges, depositories, and listed entities |
+| **IRDAI** | Insurance | Mandates information security audits including penetration testing |
+| **TRAI** | Telecom | Data protection and security audit requirements for telecom operators |
+| **MeitY** | Government IT | Guidelines for securing government websites and applications |
+
+<Callout type="info">
+  **RBI mandates** that banks conduct VAPT at least once a year, and after any major infrastructure change. Many Indian enterprises follow this cycle — plan your engagements accordingly.
+</Callout>
+
+#### Indian Cloud Provider Pentest Policies
+
+| Provider | Policy |
+|----------|--------|
+| **AWS (Mumbai/Hyderabad region)** | No prior notification required for most services. Check AWS Pentest Policy page |
+| **Azure (India regions)** | No prior approval needed. Follow Microsoft's Rules of Engagement |
+| **GCP (Mumbai region)** | No prior approval. Follow Google Cloud's Acceptable Use Policy |
+| **Indian hosting providers** | Always contact the provider directly — policies vary widely |
+
+---
+
+## Non-Disclosure Agreement (NDA)
+
+The NDA is signed **first** - before detailed scope discussions.
+
+### What NDA Protects
+
+| Protected | Examples |
+|-----------|----------|
+| Security weaknesses | Vulns, misconfigurations |
+| Company data | Trade secrets, processes |
+| PII | Employee, customer data |
+| Technical details | Network topology, credentials |
+
+### NDA Typically Covers
+
+- Types of confidential information
+- Duration of confidentiality
+- Permitted uses
+- Data destruction after engagement
+- Consequences of breach
+
+### After NDA Signed - Safe to Discuss
+
+- Systems in scope
+- Past security issues
+- Critical processes
+- Test credentials
+
+---
+
+## Scope Definition
+
+### Scoping Tools
+
+| Tool | Purpose |
+|------|---------|
+| **Scoping Questionnaire** | Checklist to gather requirements |
+| **Scoping Document** | Detailed plan: what, how, when, limits |
+
+### Scope of Work Must Include
+
+| Element | Example |
+|---------|---------|
+| **Goals** | "Confirm new environment is secure" |
+| **Limits** | "Only 2 hosts: web app + Windows server" |
+| **Methods** | Black box / Grey box / White box |
+| **Schedule** | Testing windows, report deadline |
+| **Roles** | Who oversees, who's on call |
+| **Deliverables** | Report format, level of detail |
+
+### In-Scope vs Off-Limits
+
+| In Scope | Typically Off-Limits |
+|----------|----------------------|
+| IP ranges, domains | Critical infrastructure |
+| Web applications | Medical devices |
+| Network segments | Production databases |
+| Individual systems | Backup systems |
+| | ICS/SCADA |
+| | Systems with regulated data (unless explicitly included) |
+
+<Callout>
+  **Testing windows** - Many orgs restrict to off-hours, weekends, or maintenance windows. Document exactly when testing is permitted.
+</Callout>
+
+<Callout type="info">
+  **India context:** If scope includes systems under RBI, SEBI, or IRDAI regulation, the scope document must specifically reference the regulatory mandate driving the assessment. Government systems may require additional authorization from the respective ministry.
+</Callout>
+
+---
+
+## Technical Information Gathering
+
+### White-Box Testing
+
+- Network diagrams
+- Asset inventory (hardware/software)
+- Architecture documentation
+- Application configurations
+
+### Black-Box / Grey-Box
+
+- Conduct your own reconnaissance
+- OSINT techniques
+- Limited or no prior documentation
+
+### Technology Stack to Document
+
+- OS types and versions
+- Applications and configs
+- Security controls (AV, EDR, WAF, etc.)
+- Organizational structure, key technical staff
+
+### Sensitive Systems - Extra Care
+
+| Type | Examples |
+|------|----------|
+| Medical devices | Patient care systems |
+| Industrial | ICS, SCADA |
+| Regulated data | HIPAA, PCI DSS, GDPR |
+| Critical infra | May be excluded or require special handling |
+
+---
+
+## Agreement Structure
+
+### Legal
+
+1. **NDA** - Confidentiality
+2. **Permission to Test** - Signed authorization letter
+3. **Contact Information** - All stakeholders, emergency contacts
+
+### Scope & Rules
+
+1. **Scoping Questionnaire + Document** - What gets tested
+2. **RoE** - How testing is conducted, boundaries, methods
+
+### Contract
+
+1. **Timeline** - Phases, deadlines, buffer for issues
+2. **Responsibilities** - Client vs tester duties
+3. **Deliverables** - Report format, detail level, submission timeline
+
+---
+
+## Rules of Engagement - Key Elements
+
+| Element | Description |
+|---------|-------------|
+| **Boundaries** | Systems/networks in scope, testing hours |
+| **Prohibited** | DoS, destructive testing, etc. |
+| **Contacts** | Names, roles, emails, phones |
+| **Communication** | Email for updates, phone for emergencies |
+| **Objectives** | What success looks like |
+| **Evidence Handling** | Secure storage, encryption, destruction |
+| **Disclaimers** | Liability limits, "point-in-time" caveat |
+| **Permission** | Explicit authorization with IPs, domains, timeframes |
+
+---
+
+## Communication & Emergency Procedures
+
+- **Key personnel** - Technical staff, PM, emergency contacts
+- **Escalation** - System outage, critical vuln found, service interruption
+- **Incident response plan** - Who to call, when to halt testing
+- **Communication channels** - Email (routine), phone (urgent), ticketing
+
+<Callout>
+  **When in doubt, ask.** If you discover unexpected systems or unclear scope, contact the client before proceeding.
+</Callout>
+
+---
+
+## Testing Environment Preparation
+
+| Requirement | Action |
+|-------------|--------|
+| **Isolation** | Separate VM/workspace per engagement |
+| **Clean slate** | No residual data from previous tests |
+| **Tool licensing** | Verify all tools are properly licensed |
+| **Logging** | Document all activities for report |
+| **Cross-contamination** | Never mix client data - severe breach risk |
+
+<Callout type="error">
+  **Cross-contamination** - Accidentally including exploit code, passwords, or architecture from a previous client in a new report can identify the original client. Destroy trust and create legal exposure.
+</Callout>
+
+---
+
+## Backup & Recovery
+
+Before testing: confirm client has **recent backups** of all in-scope systems. Discuss recovery capabilities. Pentesting shouldn't cause damage, but have recovery options available.
+
+---
+
+## Professional Liability & Insurance
+
+- Coverage for pentest activities
+- Clients often require minimum coverage levels
+- May need riders for cybersecurity testing
+- Review and update as scope evolves
+
+---
+
+## Confidentiality & Data Handling
+
+| Aspect | Requirement |
+|--------|--------------|
+| **Storage** | Encrypted, access-controlled |
+| **Transmission** | Secure channels only |
+| **Destruction** | After report delivery, per NDA |
+| **Regulated industries** | Specific requirements (HIPAA, PCI, DPDP Act, RBI VAPT, etc.) |
+
+<Callout type="info">
+  **India context:** Under the DPDP Act 2023, any personal data encountered during testing must be handled as per the Act's provisions. Your NDA should include DPDP Act compliance clauses. If testing uncovers a data breach, the client may need to report to the Data Protection Board of India.
+</Callout>
+
+---
+
+## Junior Tester Notes
+
+- Typically won't send reports directly to client until experienced
+- May be assigned a host or network segment independently
+- Assignments can be verbal or written
+- Written assignment = expectation to produce report
+- Use assignments to practice documentation and methodology
+
+---
+
+## Preparation - Clean Workspace
+
+Before each engagement:
+
+1. **New VM/workspace** - No leftover data from past tests
+2. **Organized structure** - Logs, screenshots, notes by host/finding
+3. **No cross-client data** - Critical for confidentiality
+4. **Tool updates** - Verify versions, licenses
+
+### Why It Matters
+
+Leaking previous client data (IPs, creds, architecture) to a new client can:
+- Allow identification of original client
+- Enable malicious/negligent use
+- Destroy trust
+- Create legal liability
+
+---
+
+## Quick Reference - Documents to Have
+
+| Before NDA | After NDA | Before Testing |
+|------------|-----------|-----------------|
+| General discussions only | Detailed scope talks | Signed RoE |
+| No sensitive details | Credentials, architecture | Authorization letter |
+| | Systems in scope | Scoping document |
+| | | Contact list |
+| | | Incident response plan |
+
+---
+
+## Methodologies & Frameworks
+
+<Callout type="info">
+  **Ask yourself:**
+  - Which methodology best fits this engagement type?
+  - Does the client require a specific framework for compliance?
+  - Am I combining elements from multiple frameworks for the best coverage?
+</Callout>
+
+### Core Methodologies
+
+| Framework | Focus | Best For |
+|-----------|-------|----------|
+| **PTES** | 7-phase pentest standard (Pre-engagement through Reporting) | General penetration testing |
+| **NIST SP 800-115** | Formal security assessment guidance | Government / NIST-aligned organizations |
+| **OWASP Testing Guide** | Web application security testing | Web app assessments |
+| **MITRE ATT&CK** | Adversary tactics and techniques from real-world attacks | Realistic threat simulation, red teaming |
+
+### PTES Phases
+
+1. Pre-engagement Interactions
+2. Intelligence Gathering
+3. Threat Modeling
+4. Vulnerability Analysis
+5. Exploitation
+6. Post-Exploitation
+7. Reporting
+
+### OWASP Testing Phases
+
+1. Information Gathering
+2. Configuration and Deployment Management Testing
+3. Identity Management Testing
+4. Authentication Testing
+
+<Callout>
+  OWASP is continuously updated by the community to address emerging threats. It contains distinct testing procedures with practical examples for nearly every web vulnerability.
+</Callout>
+
+### Choosing the Right Approach
+
+| Engagement Type | Recommended Framework(s) |
+|----------------|-------------------------|
+| Black-box network test | PTES + MITRE ATT&CK |
+| Web application test | OWASP Testing Guide |
+| Government / compliance | NIST SP 800-115 |
+| Red team assessment | MITRE ATT&CK |
+| General pentest | PTES (most common) |
+
+<Callout type="important">
+  Most professional pentesters don't strictly adhere to one methodology — they combine elements from multiple frameworks. This hybrid approach provides flexibility while maintaining structure.
+</Callout>
+
+
+
+---
+
+## Freelance Penetration Testing
+
+<Callout type="info">
+  This section covers the business, legal, and operational aspects of working as an independent/freelance penetration tester, with India-specific context.
+</Callout>
+
+### Business Setup (India)
+
+| Structure | Best For | Registration |
+|-----------|----------|-------------|
+| **Sole Proprietorship** | Starting out, low overhead | PAN + GST registration |
+| **LLP** (Limited Liability Partnership) | Small team, liability protection | MCA registration, LLP agreement |
+| **Pvt Ltd Company** | Scaling, investor-ready | MCA incorporation, more compliance |
+
+<Callout>
+  **Starting out?** Sole proprietorship is the simplest — just your PAN card and GST registration. Move to LLP when you want liability protection or bring on partners.
+</Callout>
+
+### GST & Invoicing
+
+| Aspect | Details |
+|--------|---------|
+| **GST threshold** | Registration mandatory if annual turnover exceeds ₹20 lakh (₹10 lakh for special category states) |
+| **GST rate** | 18% for IT and security consulting services (SAC Code: 998314) |
+| **Invoice must include** | GSTIN, SAC code, HSN/SAC, taxable value, CGST/SGST or IGST breakup |
+| **International clients** | Export of services — zero-rated GST (claim refund or supply under LUT) |
+
+<Callout type="important">
+  **Export of services** (foreign clients) — file a Letter of Undertaking (LUT) with GST portal to supply services at zero GST. You can also claim input tax credit refunds.
+</Callout>
+
+### Tax Considerations
+
+| Item | Details |
+|------|---------|
+| **Section 44ADA** | Presumptive taxation for professionals — 50% of gross receipts treated as income (if receipts ≤ ₹75 lakh with digital transactions) |
+| **TDS** | Clients deduct 10% TDS on professional fees (Section 194J). Collect Form 16A |
+| **Advance tax** | Pay quarterly if tax liability exceeds ₹10,000/year |
+| **ITR form** | ITR-3 (business income) or ITR-4 (presumptive taxation under 44ADA) |
+| **Deductions** | Tools, subscriptions, hardware, training, certifications, travel — all deductible |
+
+<Callout>
+  **Section 44ADA** is a significant tax advantage for freelancers with receipts under ₹75 lakh. Only 50% of your revenue is taxable, and you don't need to maintain detailed books of accounts.
+</Callout>
+
+### Essential Documents for Freelancers
+
+Every engagement should have, at minimum:
+
+1. **Proposal / Quote** — scope overview, pricing, timeline
+2. **NDA** — before sharing any details
+3. **SOW / Contract** — detailed scope, deliverables, payment terms, liability
+4. **RoE** — authorized testing boundaries
+5. **Authorization letter** — explicit written permission
+6. **Invoice** — GST-compliant with SAC code
+
+#### SOW Must-Haves for Freelancers
+
+| Clause | Why It Matters |
+|--------|----------------|
+| **Scope limitation** | Protects you from scope creep |
+| **Liability cap** | Limit your financial exposure (typically 1x-2x contract value) |
+| **Payment terms** | 50% advance + 50% on report delivery is common |
+| **Indemnification** | Client indemnifies you for authorized testing activities |
+| **IP ownership** | Reports belong to client, but tools/methodology remain yours |
+| **Limitation of findings** | Results are point-in-time, not a guarantee of security |
+| **Retesting** | Define if 1 retest is included or billed separately |
+
+### Professional Insurance
+
+| Type | Covers |
+|------|--------|
+| **Professional Liability / E&O** | Claims arising from testing activities (accidental damage, data breach) |
+| **Cyber Liability** | Data breach liability, incident response costs |
+| **General Liability** | Bodily injury, property damage during on-site testing |
+
+<Callout type="info">
+  **India:** Companies like ICICI Lombard, Bajaj Allianz, and HDFC Ergo offer professional indemnity policies. Coverage of ₹25-50 lakh is a good starting point. Some clients (especially MNCs) require proof of insurance before signing contracts.
+</Callout>
+
+### Certifications That Matter
+
+| Certification | Focus | Value in Indian Market |
+|--------------|-------|----------------------|
+| **OSCP** (OffSec) | Hands-on network/web pentesting | Very high — gold standard |
+| **CPTS** (HTB) | Penetration testing methodology | High — practical, modern |
+| **CEH** (EC-Council) | Broad security concepts | Medium — recognized by Indian govt/corporates, often required for compliance |
+| **CRTP/CRTE** (Altered Security) | Active Directory attacks | High — India-based, well-respected |
+| **eJPT/eCPPT** (INE) | Entry-level → intermediate pentesting | Good for starting out |
+| **CISA/CISSP** | Governance, audit, management | High for compliance-driven engagements |
+
+<Callout>
+  **Indian corporates and government** often list CEH as a requirement in RFPs. While OSCP is more respected technically, having CEH can help you qualify for tenders.
+</Callout>
+
+### Bug Bounty Platforms
+
+| Platform | Notes |
+|----------|-------|
+| **HackerOne** | Largest platform, many Indian companies participate |
+| **Bugcrowd** | Strong program variety |
+| **Synack** | Invite-only, higher payouts |
+| **Open Bug Bounty** | Free, community-driven |
+| **NCIIPC** (India) | National vulnerability disclosure for critical infra — [nciipc.gov.in](https://nciipc.gov.in) |
+
+<Callout type="info">
+  **NCIIPC** (National Critical Information Infrastructure Protection Centre) accepts responsible vulnerability disclosures for Indian critical infrastructure. Report vulnerabilities at their portal — this is a legitimate channel for reporting issues in government/critical systems.
+</Callout>
+
+### Pricing (Indian Market Reference)
+
+| Engagement Type | Typical Range (INR) |
+|----------------|-------------------|
+| Web app pentest (small) | ₹50K - ₹1.5L |
+| Web app pentest (complex) | ₹1.5L - ₹5L |
+| Network pentest (internal) | ₹1L - ₹4L |
+| Network pentest (external) | ₹75K - ₹3L |
+| API pentest | ₹50K - ₹2L |
+| Mobile app (Android/iOS) | ₹75K - ₹3L |
+| Red team engagement | ₹5L - ₹20L+ |
+| Compliance VAPT (RBI/SEBI) | ₹1L - ₹5L |
+
+<Callout type="error">
+  **Don't undersell yourself.** The Indian market has a race-to-the-bottom problem with VAPT pricing. Quality work at fair rates builds a sustainable career. Low-ball pricing attracts clients who don't value security.
+</Callout>
+
+### Finding Clients
+
+| Channel | Approach |
+|---------|----------|
+| **LinkedIn** | Build presence, share writeups, connect with CISOs/CTOs |
+| **Referrals** | Best source — deliver quality, ask for introductions |
+| **Bug bounties** | Build portfolio, demonstrate skill |
+| **Conferences** | Nullcon, c0c0n, BSides India, OWASP chapter meets |
+| **Freelance platforms** | Upwork, Toptal (for established testers) |
+| **Government tenders** | GeM (Government e-Marketplace), CPPP portal for VAPT contracts |
+| **Startup ecosystem** | Reach out to funded startups — they often need compliance pentests |
+
+### OPSEC for Freelancers
+
+| Practice | Why |
+|----------|-----|
+| **Dedicated testing machine** | Never mix client work with personal data |
+| **VPN for testing** | Route traffic through your own infrastructure, not public ISP directly |
+| **Encrypted storage** | All client data encrypted at rest (LUKS, VeraCrypt) |
+| **Secure communication** | Use encrypted email/messaging for findings |
+| **Data destruction SOP** | Wipe all client data after engagement + retention period |
+| **Separate accounts** | Dedicated email, phone number for business |
+| **Activity logging** | Log all testing activity with timestamps for legal protection |
+
+<Callout type="important">
+  Always log your testing activities with timestamps. If a client's system goes down during your testing window, your logs prove what you did and didn't do. This has saved freelancers from false blame.
+</Callout>
+
+#pre-engagement #methodology #pentest #cpts #oscp
+

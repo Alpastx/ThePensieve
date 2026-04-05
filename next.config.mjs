@@ -30,5 +30,17 @@ export default withNextra({
         { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
       ],
     },
+    {
+      source: '/mystic.svg',
+      headers: [
+        { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+      ],
+    },
+    {
+      source: '/sword.png',
+      headers: [
+        { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+      ],
+    },
   ],
 })
