@@ -18,13 +18,12 @@ const appMeta = {
     title: 'CJCA',
     href: '/Certifications/cjca',
   },
-  '###': {
-    type: 'separator',
-    title: 'CVE-Research',
-  },
   '####': {
     type: 'separator',
-    title: 'Writeups',
+    title: "CTF's",
+  },
+  CTF: {
+    display: 'children',
   },
   '#####': {
     type: 'separator',
@@ -56,11 +55,7 @@ const appMeta = {
   tool_meterpreter: {
     title: 'Meterpreter',
     href: '/Tools/Meterpreter',
-  },
-  '######': {
-    type: 'separator',
-    title: 'Blogs',
-  },
+  }
   
 }
 

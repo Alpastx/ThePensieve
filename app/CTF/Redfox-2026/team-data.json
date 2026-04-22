@@ -1,0 +1,310 @@
+{
+  "team": {
+    "id": 147,
+    "name": "Windows 9/11",
+    "alias": "Team-915",
+    "country": "India",
+    "place": "22nd",
+    "points": 8667,
+    "source": "https://ctf.redfoxsec.com/teams/147",
+    "captured_at_utc": "2026-03-21T18:26:08.065Z"
+  },
+  "members": [
+    {
+      "user_id": 343,
+      "username": "Drago",
+      "score": 2200
+    },
+    {
+      "user_id": 344,
+      "username": "Alapstx",
+      "score": 4077
+    },
+    {
+      "user_id": 345,
+      "username": "ArHello",
+      "score": 150
+    },
+    {
+      "user_id": 346,
+      "username": "NaZer0",
+      "score": 2240
+    }
+  ],
+  "solves_count": 39,
+  "solves": [
+    {
+      "challenge_anchor": "Valhalla Relay Vault-58",
+      "challenge": "Valhalla Relay Vault",
+      "category": "Android",
+      "points": 350,
+      "solved_at_utc": "2026-03-21T12:08:39.975116Z"
+    },
+    {
+      "challenge_anchor": "Foxfire Trials-78",
+      "challenge": "Foxfire Trials",
+      "category": "Bonus",
+      "points": 377,
+      "solved_at_utc": "2026-03-21T11:10:02.807741Z"
+    },
+    {
+      "challenge_anchor": "Kratos' Rage-55",
+      "challenge": "Kratos' Rage",
+      "category": "Forensics",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T10:21:02.171050Z"
+    },
+    {
+      "challenge_anchor": "Realm of the Fox-77",
+      "challenge": "Realm of the Fox",
+      "category": "Bonus",
+      "points": 50,
+      "solved_at_utc": "2026-03-21T10:16:21.684831Z"
+    },
+    {
+      "challenge_anchor": "Brother's Quarrel-75",
+      "challenge": "Brother's Quarrel",
+      "category": "OSINT",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T09:05:52.280275Z"
+    },
+    {
+      "challenge_anchor": "Bloodline of the Aesir-71",
+      "challenge": "Bloodline of the Aesir",
+      "category": "Web",
+      "points": 500,
+      "solved_at_utc": "2026-03-21T08:40:17.383354Z"
+    },
+    {
+      "challenge_anchor": "Asgard Vault-67",
+      "challenge": "Asgard Vault",
+      "category": "Web",
+      "points": 450,
+      "solved_at_utc": "2026-03-21T08:20:41.137980Z"
+    },
+    {
+      "challenge_anchor": "Midgard Gate-64",
+      "challenge": "Midgard Gate",
+      "category": "Web",
+      "points": 450,
+      "solved_at_utc": "2026-03-21T08:17:51.826428Z"
+    },
+    {
+      "challenge_anchor": "The NewAge-46",
+      "challenge": "The NewAge",
+      "category": "Miscellaneous",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T08:10:30.829436Z"
+    },
+    {
+      "challenge_anchor": "Frostbound Gateway-74",
+      "challenge": "Frostbound Gateway",
+      "category": "AWS",
+      "points": 300,
+      "solved_at_utc": "2026-03-21T07:57:24.264970Z"
+    },
+    {
+      "challenge_anchor": "Bifrost Sigil Hijack-70",
+      "challenge": "Bifrost Sigil Hijack",
+      "category": "Web",
+      "points": 450,
+      "solved_at_utc": "2026-03-21T07:49:02.119912Z"
+    },
+    {
+      "challenge_anchor": "Niflheim Ledger-66",
+      "challenge": "Niflheim Ledger",
+      "category": "Web",
+      "points": 400,
+      "solved_at_utc": "2026-03-21T07:42:55.603158Z"
+    },
+    {
+      "challenge_anchor": "Jotunheim Forge-62",
+      "challenge": "Jotunheim Forge",
+      "category": "Web",
+      "points": 400,
+      "solved_at_utc": "2026-03-21T07:41:24.082240Z"
+    },
+    {
+      "challenge_anchor": "Alfheim Archive-65",
+      "challenge": "Alfheim Archive",
+      "category": "Web",
+      "points": 400,
+      "solved_at_utc": "2026-03-21T07:41:08.217085Z"
+    },
+    {
+      "challenge_anchor": "Hunting For Mistletoe-45",
+      "challenge": "Hunting For Mistletoe",
+      "category": "Miscellaneous",
+      "points": 120,
+      "solved_at_utc": "2026-03-21T07:39:11.923604Z"
+    },
+    {
+      "challenge_anchor": "Keys of the All-Father-76",
+      "challenge": "Keys of the All-Father",
+      "category": "Bonus",
+      "points": 50,
+      "solved_at_utc": "2026-03-21T07:35:37.730761Z"
+    },
+    {
+      "challenge_anchor": "Portal to Helheim-44",
+      "challenge": "Portal to Helheim",
+      "category": "Forensics",
+      "points": 150,
+      "solved_at_utc": "2026-03-21T07:26:27.894967Z"
+    },
+    {
+      "challenge_anchor": "Crawling Like Black Maria-6",
+      "challenge": "Crawling Like Black Maria",
+      "category": "OSINT",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T07:11:51.639011Z"
+    },
+    {
+      "challenge_anchor": "Watcher of the Realms-73",
+      "challenge": "Watcher of the Realms",
+      "category": "AWS",
+      "points": 250,
+      "solved_at_utc": "2026-03-21T07:05:36.975177Z"
+    },
+    {
+      "challenge_anchor": "Odin's Policy Scrolls-72",
+      "challenge": "Odin's Policy Scrolls",
+      "category": "AWS",
+      "points": 250,
+      "solved_at_utc": "2026-03-21T07:00:35.126601Z"
+    },
+    {
+      "challenge_anchor": "Echoes from J\u00f6tunheim-27",
+      "challenge": "Echoes from J\u00f6tunheim",
+      "category": "Hardware",
+      "points": 200,
+      "solved_at_utc": "2026-03-21T06:51:03.439369Z"
+    },
+    {
+      "challenge_anchor": "Runes of the Cipher-69",
+      "challenge": "Runes of the Cipher",
+      "category": "Crypto",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T06:50:15.447345Z"
+    },
+    {
+      "challenge_anchor": "The Secret Treasure-15",
+      "challenge": "The Secret Treasure",
+      "category": "Steganography",
+      "points": 150,
+      "solved_at_utc": "2026-03-21T06:49:15.191785Z"
+    },
+    {
+      "challenge_anchor": "Rieck Roll-10",
+      "challenge": "Rieck Roll",
+      "category": "Forensics",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T06:46:57.074775Z"
+    },
+    {
+      "challenge_anchor": "Inter-Realm Taxi-Cab Pt 3-50",
+      "challenge": "Inter-Realm Taxi-Cab Pt 3",
+      "category": "OSINT",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T06:46:42.471446Z"
+    },
+    {
+      "challenge_anchor": "Echoes of the Bifrost-13",
+      "challenge": "Echoes of the Bifrost",
+      "category": "Steganography",
+      "points": 120,
+      "solved_at_utc": "2026-03-21T06:07:13.660806Z"
+    },
+    {
+      "challenge_anchor": "Loki's Escape-42",
+      "challenge": "Loki's Escape",
+      "category": "Forensics",
+      "points": 250,
+      "solved_at_utc": "2026-03-21T05:58:12.859036Z"
+    },
+    {
+      "challenge_anchor": "Secure Comms-11",
+      "challenge": "Secure Comms",
+      "category": "Forensics",
+      "points": 150,
+      "solved_at_utc": "2026-03-21T05:46:25.368053Z"
+    },
+    {
+      "challenge_anchor": "Inter-Realm Taxi-Cab Pt 2-49",
+      "challenge": "Inter-Realm Taxi-Cab Pt 2",
+      "category": "OSINT",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T05:36:37.408722Z"
+    },
+    {
+      "challenge_anchor": "Inter-Realm Taxi-Cab-48",
+      "challenge": "Inter-Realm Taxi-Cab",
+      "category": "OSINT",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T05:25:50.344321Z"
+    },
+    {
+      "challenge_anchor": "Spartan APK Secrets-57",
+      "challenge": "Spartan APK Secrets",
+      "category": "Android",
+      "points": 300,
+      "solved_at_utc": "2026-03-21T05:20:58.724180Z"
+    },
+    {
+      "challenge_anchor": "Tears of the Leviathan-26",
+      "challenge": "Tears of the Leviathan",
+      "category": "Hardware",
+      "points": 300,
+      "solved_at_utc": "2026-03-21T05:19:52.451689Z"
+    },
+    {
+      "challenge_anchor": "Magni's Oversight-43",
+      "challenge": "Magni's Oversight",
+      "category": "Forensics",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T05:04:39.342156Z"
+    },
+    {
+      "challenge_anchor": "Key to Jotunheim-51",
+      "challenge": "Key to Jotunheim",
+      "category": "Reverse Engineering",
+      "points": 300,
+      "solved_at_utc": "2026-03-21T04:57:51.626211Z"
+    },
+    {
+      "challenge_anchor": "Odin's Vault-56",
+      "challenge": "Odin's Vault",
+      "category": "Reverse Engineering",
+      "points": 350,
+      "solved_at_utc": "2026-03-21T04:56:34.261531Z"
+    },
+    {
+      "challenge_anchor": "Code of the Nine Realms-38",
+      "challenge": "Code of the Nine Realms",
+      "category": "Forensics",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T04:55:10.480939Z"
+    },
+    {
+      "challenge_anchor": "Mimir's Find-52",
+      "challenge": "Mimir's Find",
+      "category": "Reverse Engineering",
+      "points": 350,
+      "solved_at_utc": "2026-03-21T04:49:47.555158Z"
+    },
+    {
+      "challenge_anchor": "Ghost of Sparta-54",
+      "challenge": "Ghost of Sparta",
+      "category": "Forensics",
+      "points": 100,
+      "solved_at_utc": "2026-03-21T04:36:48.779150Z"
+    },
+    {
+      "challenge_anchor": "Sanity Check and Additional Instructions-37",
+      "challenge": "Sanity Check and Additional Instructions",
+      "category": "Sanity Check",
+      "points": 50,
+      "solved_at_utc": "2026-03-21T04:30:06.371938Z"
+    }
+  ]
+}
