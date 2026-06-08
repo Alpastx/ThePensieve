@@ -1,0 +1,526 @@
+---
+title: Web Reconnaissance
+description: Passive and active reconnaissance methodology for mapping a web target's domains, infrastructure, technology stack, and exposed content.
+---
+
+import { Callout } from 'nextra/components'
+
+
+# Web Reconnaissance
+
+## Cheatsheet
+
+```bash
+# Passive 
+whois <DOMAIN>
+
+#Certificate Transparency logs
+curl -s "https://crt.sh/?q=<DOMAIN>&output=json" | jq -r '.[].name_value' | sort -u
+curl -s "https://crt.sh/?q=%25.<DOMAIN>&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | sort -u
+
+# historical URLs and snapshots
+waybackurls <DOMAIN> | sort -u
+# or open it in browser and choose date accordingly 
+```
+
+```bash
+# DNS record enumeration
+dig <DOMAIN> any +noall +answer
+dig <DOMAIN> a +short
+dig <DOMAIN> mx +short
+dig <DOMAIN> ns +short
+dig <DOMAIN> txt +short
+
+# zone transfer
+dig axfr <DOMAIN> @<DNS_IP>
+
+# subdomain brute force
+dnsenum --enum <DOMAIN> -f /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -r
+ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u "http://<DOMAIN>" -H "Host: FUZZ.<DOMAIN>" -ac
+feroxbuster -u http://FUZZ.example.com -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt
+```
+
+```bash
+# virtual host discovery 
+gobuster vhost -u http://<IP>:<PORT> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --append-domain
+ffuf -w <WORDLIST> -u http://<IP> -H "Host: FUZZ.<DOMAIN>" -ac
+
+```
+
+```bash
+# fingerprinting and WAF detection
+curl -I http://<DOMAIN>            # server banner + redirect chain
+whatweb <DOMAIN>
+wafw00f <DOMAIN>
+nikto -h <DOMAIN> -Tuning b        # software identification only
+
+# content / metadata discovery
+curl -s http://<DOMAIN>/robots.txt
+curl -s http://<DOMAIN>/sitemap.xml
+curl -s http://<DOMAIN>/.well-known/security.txt
+curl -s http://<DOMAIN>/.well-known/openid-configuration | jq # information about the authentication server
+```
+
+## Methodology
+
+
+
+### Phase 1: Scope and Passive Footprinting
+
+<Callout type="default">
+  **Ask Yourself these questions :**
+  - Who owns the domain, when was it registered, and which registrar and name servers manage it?
+  - What can I learn from public sources (search engines, archives, code repos) without ever touching the target?
+  - Which findings here (employee names, tech-stack hints, leaked configs) feed later credential or exploitation phases?
+  - What evidence must I record now (registrant data, historical snapshots) before it changes or disappears?
+</Callout>
+
+```bash
+# Capture ownership, registrar, and authoritative DNS clues
+whois <DOMAIN>
+whois <DOMAIN> | grep -i "iana\|registrar\|name server\|creation\|expiry"
+
+# Pull historical URLs from public archives
+waybackurls <DOMAIN> | sort -u
+```
+
+```text
+# Search indexed pages for high-value paths and documents
+site:<DOMAIN> (inurl:login OR inurl:admin)
+site:<DOMAIN> (filetype:pdf OR filetype:xls OR filetype:docx)
+site:<DOMAIN> (ext:conf OR ext:cnf OR ext:sql)
+```
+
+- [ ] Confirm scope and Rules of Engagement before any query.
+- [ ] Run `whois <DOMAIN>` to capture registrar, dates, name servers, and registrant org.
+- [ ] Search engines + Google dorks for exposed files, login pages, and config (`site:`, `filetype:`, `inurl:`).
+- [ ] Review the Wayback Machine for old endpoints, removed pages, and prior tech stacks.
+- [ ] Search GitHub/GitLab for the org name and domain to find leaked credentials, keys, or internal hostnames.
+
+<Callout type="info">
+  Passive recon never sends traffic to the target, so it is effectively
+  undetectable. Exhaust it before active probing, every subdomain or credential found passively saves a noisy active query later.
+</Callout>
+
+### Phase 2: DNS Enumeration and Subdomain Discovery
+
+<Callout type="default" >
+  **Ask Yourself these questions :**
+  - Which DNS records (A, AAAA, MX, NS, TXT, CNAME) exist, and what infrastructure do they reveal?
+  - Do any authoritative name servers allow an unauthenticated zone transfer (AXFR)?
+  - Which subdomains exist that are not linked from the main site (dev, staging, admin, VPN)?
+  - Are Certificate Transparency logs revealing subdomains that a wordlist would miss?
+  - Which discovered hosts are the softest targets (non-prod, legacy, self-hosted) versus hardened production?
+</Callout>
+
+```bash
+# Enumerate core DNS records
+dig <DOMAIN> a +short
+dig <DOMAIN> aaaa +short
+dig <DOMAIN> mx +short
+dig <DOMAIN> ns +short
+dig <DOMAIN> txt +short
+
+# Attempt AXFR against each authoritative name server
+dig axfr <DOMAIN> @<DNS_IP>
+
+# Pull subdomains from Certificate Transparency logs
+curl -s "https://crt.sh/?q=%25.<DOMAIN>&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | sort -u
+
+# Brute force and resolve candidate subdomains
+dnsenum --enum <DOMAIN> -f /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -r
+dnsx -l subdomains.txt -resp -a -aaaa -cname -silent
+```
+
+- [ ] Enumerate records: `dig <DOMAIN> any`, plus explicit `a`, `aaaa`, `mx`, `ns`, `txt` queries.
+- [ ] Attempt a zone transfer against **every** NS: `dig axfr <DOMAIN> @<DNS_IP>`.
+- [ ] Pull subdomains passively from CT logs (`crt.sh`, Censys) before brute forcing.
+- [ ] Brute force subdomains with `dnsenum`/`ffuf` and a SecLists DNS wordlist; enable recursion on hits.
+- [ ] Resolve every discovered subdomain to its IP and group hosts by IP for the vhost phase.
+
+<Callout type="warning">
+  **OPSEC** Noise: brute force is high-volume and easily rate-limited or alerted.
+</Callout>
+
+A successful zone transfer dumps the entire zone, every subdomain, IP, and
+record in one request. Most servers refuse it, but a single misconfigured
+secondary still makes the attempt worthwhile.
+
+### Phase 3: Virtual Host Discovery
+
+<Callout type="default"  >
+  **Ask Yourself these questions :**
+  - Does this IP host multiple sites distinguished only by the `Host` header?
+  - Which vhosts respond differently (status, size, redirect) from the default page?
+  - Are there internal-only vhosts (`dev`, `staging`, `internal`) served on the same IP but absent from public DNS?
+  - Which response sizes/status codes are the baseline so I can filter false positives?
+</Callout>
+
+```bash
+# Establish a default/wildcard baseline
+curl -s -o /dev/null -w "%{http_code} %{size_download}\n" -H "Host: invalid-$(date +%s).<DOMAIN>" http://<IP>:<PORT>/
+
+# name-based virtual hosts
+gobuster vhost -u http://<IP>:<PORT> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --append-domain
+
+ffuf -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt -u http://<IP>:<PORT>/ -H "Host: FUZZ.<DOMAIN>" -ac
+
+# Manually confirm a hit before adding it to scope notes
+curl -i -H "Host: <VHOST>" http://<IP>:<PORT>/
+```
+
+- [ ] Establish the baseline response for an unknown `Host` value to set filters.
+- [ ] Fuzz the `Host` header with `gobuster vhost` or `ffuf -H "Host: FUZZ.<DOMAIN>"`.
+- [ ] Auto-calibrate (`-ac` / size filters) to drop wildcard/default responses.
+- [ ] Manually confirm each hit by requesting it with the matching `Host` header.
+- [ ] Bind confirmed vhosts to the target IP in `/etc/hosts` so the browser and tools resolve them.
+
+
+### Phase 4: Fingerprinting and WAF Detection
+
+<Callout type="default"  >
+  **Ask Yourself these questions :**
+  - What web server, version, framework, and CMS is running, and is any of it outdated?
+  - Is a WAF in front of the app, and will it alter or block my later probes?
+  - What do the HTTP headers, redirect chain, and error pages leak about the stack?
+  - Which identified technology maps to a known CVE or a dedicated enumeration note (e.g. WordPress)?
+  - How should the WAF change my tempo and payload choices for the next phase?
+  - Are there aany waf bypass available on socials like x.com, github, etc? 
+</Callout>
+
+```bash
+# Compare HTTP and HTTPS headers and redirect behavior
+curl -k -I http://<DOMAIN>
+curl -k -I https://<DOMAIN>
+
+# Fingerprint web technologies
+whatweb -a 3 <URL>
+wafw00f <URL>
+
+# sfotware check with nikto
+nikto -h <URL> -Tuning b
+
+# Check identified products against local exploit metadata
+searchsploit <PRODUCT> <VERSION>
+```
+
+- [ ] Grab banners and follow the full redirect chain: `curl -I` on http and https.
+- [ ] Run `whatweb` / Wappalyzer to profile CMS, frameworks, and analytics.
+- [ ] Detect WAFs with `wafw00f` **before** any aggressive scanning.
+- [ ] Run `nikto -Tuning b` for software identification and obvious misconfigurations.
+- [ ] Map each finding to a version and check `searchsploit` / advisories for matching CVEs.
+
+<Callout type="warning">
+  **OPSEC** Noise:  `nikto` is very loud and trivially logged keep it last choice.
+</Callout>
+
+### Phase 5: Content and Endpoint Discovery
+
+<Callout type="default"  >
+  **Ask Yourself these questions :**
+  - What do `robots.txt` and `sitemap.xml` reveal about hidden or sensitive paths?
+  - Which `.well-known` URIs expose configuration (e.g. `openid-configuration`, `security.txt`)?
+  - Do exposed endpoints reveal auth servers, APIs, or token issuers worth deeper testing?
+  - Which discovered paths justify directory brute forcing or focused vulnerability testing next?
+</Callout>
+
+```bash
+# ATP start burp/Zen scanner or crawler to crawl whatever sites/pages you get to reveal information like mails, usernames, comments, etc
+curl -s <URL>/robots.txt
+curl -s <URL>/sitemap.xml
+curl -s <URL>/.well-known/security.txt
+curl -s <URL>/.well-known/openid-configuration | jq
+
+
+# Brute force 
+feroxbuster -u <URL> -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -x php,txt,bak,zip -k
+
+ffuf -w /usr/share/seclists/Discovery/Web-Content/raft-medium-directories.txt -ac -c -m 200,204,301,307,401,405,400,302 -u <URL>
+```
+
+- [ ] Fetch `robots.txt` and treat every `Disallow` as a hint, not a barrier.
+- [ ] Fetch `sitemap.xml` for a quick map of intended pages.
+- [ ] Probe `.well-known/` URIs, especially `openid-configuration` and `security.txt`.
+- [ ] Catalogue every interesting path and hand it to directory brute forcing / web attack notes.
+
+### Phase 6: Crawl and Extract Artifacts
+
+<Callout type="default"  >
+  **Ask Yourself these questions :**
+  - Which discovered host is worth crawling: production, dev, staging, or a newly found vhost?
+  - What data should the crawler extract: emails, comments, links, forms, JavaScript files, API paths, or secrets?
+  - Which extracted values create the next attack path: usernames for spraying, API keys, auth endpoints, or hidden admin routes?
+  - What evidence should be saved so the path can be reproduced in a report?
+</Callout>
+
+```bash
+# Crawl a discovered host with an existing crawler
+python3 ReconSpider.py <URL>
+
+# Inspect extracted emails, comments, and links
+jq '.emails' results.json
+jq '.comments' results.json
+jq '.links' results.json
+
+# Crawl with Katana as a modern CLI alternative
+katana -u <URL> -d 3 -silent -o katana-urls.txt
+
+# use bursuiite crawler to crawl the site
+```
+
+- [ ] Crawl only hosts that are confirmed in scope and already prioritized by earlier phases.
+- [ ] Save crawler output (`results.json`, discovered URLs, screenshots, key responses) as evidence.
+- [ ] Review emails and usernames for credential attacks, but confirm lockout policy before spraying.
+- [ ] Review HTML comments and JavaScript for API keys, deprecated endpoints, and planned key rotations.
+- [ ] Re-feed discovered paths and hosts into the vhost, content discovery, and fingerprinting phases.
+
+### Methodology Recovery
+
+When every phase above is complete and no clear path remains:
+
+1. Re-run from Phase 1 with the evidence collected, new subdomains often unlock new vhosts and endpoints.
+2. Re-attempt AXFR and CT-log queries; zones and certificates change over time.
+3. Swap wordlists (different SecLists DNS/content lists) and re-fuzz vhosts and directories.
+4. Recheck headers and behavior on every host, not just the primary domain.
+5. Re-feed crawler-extracted usernames and emails into credential attacks against the softest host.
+
+## Reference
+
+### WHOIS
+
+Key fields to extract and why they matter:
+
+- `Registrar` / `Creation Date` / `Expiry Date` : domain age and legitimacy; old, long-registered domains are established assets.
+- `Registrant / Admin / Tech Organization` : the owning entity and points of contact (social engineering and scope confirmation).
+- `Domain Status` (e.g. `clientTransferProhibited`) : locks that indicate security maturity.
+- `Name Servers` : self-hosted vs third-party DNS, hinting at infrastructure and hosting provider.
+
+Modern WHOIS is often privacy-redacted, so combine it with DNS and OSINT rather
+than relying on it alone.
+
+### DNS Record Types
+
+| Record | Full Name | Purpose | Zone File Example |
+|---|---|---|---|
+| `A` | Address | Hostname to IPv4 | `www.example.com. IN A 192.0.2.1` |
+| `AAAA` | IPv6 Address | Hostname to IPv6 | `www.example.com. IN AAAA 2001:db8::1` |
+| `CNAME` | Canonical Name | Alias to another hostname | `blog.example.com. IN CNAME web.example.net.` |
+| `MX` | Mail Exchange | Mail server(s) for the domain | `example.com. IN MX 10 mail.example.com.` |
+| `NS` | Name Server | Delegates a zone to an authoritative server | `example.com. IN NS ns1.example.com.` |
+| `TXT` | Text | Arbitrary text (SPF, domain verification) | `example.com. IN TXT "v=spf1 mx -all"` |
+| `SOA` | Start of Authority | Zone admin metadata | `example.com. IN SOA ns1... admin... <serial>` |
+| `SRV` | Service | Host + port for a service | `_sip._udp.example.com. IN SRV 10 5 5060 sip...` |
+| `PTR` | Pointer | Reverse lookup (IP to hostname) | `1.2.0.192.in-addr.arpa. IN PTR www.example.com.` |
+
+For full DNS service enumeration (port 53, BIND version, AD SRV records), see
+[DNS enumeration](/01-Recon-and-Enumeration/Service-Enum/DNS-53).
+
+### dig Common Commands
+
+| Command | Description |
+|---|---|
+| `dig <DOMAIN>` | Default A record lookup |
+| `dig <DOMAIN> MX` | Mail servers |
+| `dig <DOMAIN> NS` | Authoritative name servers |
+| `dig <DOMAIN> TXT` | TXT records (SPF, verification) |
+| `dig <DOMAIN> SOA` | Start-of-authority record |
+| `dig @1.1.1.1 <DOMAIN>` | Query a specific resolver |
+| `dig +trace <DOMAIN>` | Full resolution path from root |
+| `dig -x <IP>` | Reverse lookup (may need an explicit NS) |
+| `dig +short <DOMAIN>` | Concise answer only |
+| `dig +noall +answer <DOMAIN>` | Answer section only |
+| `dig <DOMAIN> AXFR @<NS>` | Attempt a zone transfer |
+| `dig <DOMAIN> ANY` | All records (often ignored per RFC 8482) |
+
+### Subdomain Brute Forcing
+
+`Subdomain brute force` tests pre-defined name lists against a domain to find
+valid subdomains. Wordlist quality drives results.
+
+| Tool | Notes |
+|---|---|
+| [dnsenum](https://github.com/fwaeytens/dnsenum) | Records, dictionary + brute force, zone transfers, Google scraping |
+| [dnsrecon](https://github.com/darkoperator/dnsrecon) | Combines techniques, multiple output formats |
+| [amass](https://github.com/owasp-amass/amass) | Deep passive + active, many data sources |
+| [assetfinder](https://github.com/tomnomnom/assetfinder) | Fast lightweight passive lookups |
+| [puredns](https://github.com/d3mondev/puredns) | High-speed resolve + filter |
+
+```bash
+# dnsenum: -f wordlist, -r recursive on discovered subdomains
+dnsenum --enum <DOMAIN> -f /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -r
+
+#amass
+amass enum -d target.com -brute -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -o brute.txt
+
+# puredns
+puredns resolve <DOMAIN> -r /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt
+
+# recommended wordlists 
+/usr/share/seclists/Discovery/DNS/bitquark-subdomains-top100000.txt
+/usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt
+```
+
+### Zone Transfers (AXFR)
+
+A zone transfer is a wholesale copy of every record in a DNS zone from one name
+server to another, used for redundancy. A misconfigured server that allows AXFR
+from any client leaks the full zone: subdomains, IPs, and NS records.
+
+```bash
+dig axfr <DOMAIN> @<DNS_IP>
+```
+
+### Virtual Hosting Types
+
+1. `Name-Based` : distinguishes sites by the HTTP `Host` header on one IP. Most common.
+2. `IP-Based` : one IP per site, no reliance on the `Host` header.
+3. `Port-Based` : different sites on different ports of one IP.
+| Tool | Use for vhosts |
+|---|---|
+| [gobuster](https://github.com/OJ/gobuster) | `vhost` mode; needs `--append-domain` on newer versions |
+| [Feroxbuster](https://github.com/epi052/feroxbuster) | Rust speed, recursion, filters |
+| [ffuf](https://github.com/ffuf/ffuf) | Fuzz the `Host` header with `-H "Host: FUZZ.<DOMAIN>"` |
+
+```bash
+# Useful gobuster flags: -t threads, -k ignore TLS errors, -o save output
+gobuster vhost -u http://<DOMAIN>:<PORT> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-110000.txt --append-domain
+```
+
+### Certificate Transparency (CT) Logs
+
+CT logs are public, append-only records of every TLS certificate issued. Unlike
+brute forcing, they give a definitive historical list of subdomains including
+expired ones that may run outdated, vulnerable software.
+
+| Tool | Pros | Cons |
+|---|---|---|
+| [crt.sh](https://crt.sh/) | Free, no registration, simple domain search | Limited filtering |
+| [Censys](https://search.censys.io/) | Powerful filters, API, deep cert analysis | Registration required (free tier) |
+
+```bash
+# All 'dev' subdomains for facebook.com via the crt.sh JSON API
+curl -s "https://crt.sh/?q=<DOMAIN>&output=json" | jq -r '.[] | select(.name_value | contains("dev")) | .name_value' | sort -u
+```
+
+### Fingerprinting Tools
+
+| Tool | Description |
+|---|---|
+| `Wappalyzer` | Browser/online tech profiler (CMS, frameworks, analytics) |
+| `BuiltWith` | Detailed tech-stack reports |
+| `WhatWeb` | CLI fingerprinter with a large signature DB |
+| `Nmap` | Service/OS detection plus NSE fingerprinting scripts |
+| `Netcraft` | Hosting, tech, and security reports |
+| `wafw00f` | Identifies WAF presence and type |
+
+### robots.txt
+
+```text
+User-agent: *
+Disallow: /admin/
+Disallow: /private/
+Allow: /public/
+Sitemap: https://www.example.com/sitemap.xml
+```
+
+`Disallow` entries advertise paths the owner wants hidden from crawlers,exactly
+the directories worth manual inspection. It is a hint source, not access control.
+
+### .well-known URIs
+
+The `.well-known/` path (RFC 8615) centralizes site metadata. IANA maintains the
+[registry](https://www.iana.org/assignments/well-known-uris/well-known-uris.xhtml).
+
+| URI Suffix | Description |
+|---|---|
+| `security.txt` | Security contact for vulnerability reports (RFC 9116) |
+| `change-password` | Standard URL to a password-change page |
+| `openid-configuration` | OpenID Connect / OAuth 2.0 provider metadata |
+| `assetlinks.json` | Verifies digital-asset (app) ownership |
+| `mta-sts.txt` | SMTP MTA Strict Transport Security policy |
+
+```bash
+curl -s https://example.com/.well-known/openid-configuration | jq
+```
+
+`openid-configuration` exposes the authorization, token, userinfo, and JWKS
+endpoints plus supported scopes and signing algorithms a map of the auth
+surface for later OAuth/JWT testing.
+
+### Search Operators (Google Dorking)
+
+| Operator | Use | Example |
+|---|---|---|
+| `site:` | Limit to a domain | `site:example.com` |
+| `inurl:` | Term in URL | `inurl:login` |
+| `filetype:` | File type | `filetype:pdf` |
+| `intitle:` | Term in title | `intitle:"confidential report"` |
+| `intext:` | Term in body | `intext:"password reset"` |
+| `cache:` | Cached page | `cache:example.com` |
+| `AND` / `OR` / `NOT` | Boolean logic | `site:example.com AND inurl:admin` |
+| `*` | Wildcard | `site:example.com user* manual` |
+| `..` | Numeric range | `site:shop.com "price" 100..500` |
+| `" "` | Exact phrase | `"information security policy"` |
+| `-` | Exclude term | `site:news.com -inurl:sports` |
+
+Common dork patterns (see the [Google Hacking Database](https://www.exploit-db.com/google-hacking-database)):
+
+```text
+# Login / admin pages
+site:example.com (inurl:login OR inurl:admin)
+
+# Exposed documents and config
+site:example.com (filetype:xls OR filetype:docx)
+site:example.com inurl:config.php
+site:example.com (ext:conf OR ext:cnf)
+
+# Database backups
+site:example.com filetype:sql
+```
+## Common Mistakes
+
+<Callout type="error">
+  - Jumping to active scanning before exhausting passive sources wasting stealth and tipping off the target.
+  - Trying AXFR against only one name server; test **every** NS, since one misconfigured secondary is enough.
+  - Trusting privacy-redacted WHOIS as complete and skipping DNS/CT correlation.
+  - Forgetting `--append-domain` on modern Gobuster vhost mode, producing zero (or wrong) results.
+  - Running `nikto` against a WAF-protected host and getting blocked/blacklisted.
+</Callout>
+
+<Quiz
+  question="Passive WHOIS and CT log searches return little, but the target uses TLS on a single shared IP. You suspect unlinked internal sites. What is the highest-value next step?"
+  options={[
+    "Run nikto with full tuning against the main domain",
+    "Fuzz the Host header against the IP with gobuster vhost / ffuf",
+    "Brute force directories on the main site",
+    "Re-run whois with a different registrar lookup"
+  ]}
+  answer={1}
+  explanation="Sites that share an IP but are absent from public DNS are found by varying the Host header (virtual host discovery), not by DNS brute forcing or directory brute forcing. nikto is noisy and would not surface unlinked vhosts, and WHOIS yields nothing new here."
+/>
+
+<Quiz
+  question="A curl -I shows 'X-Redirect-By: WordPress' and a wp-json Link header. Before launching wpscan, what should you confirm first?"
+  options={[
+    "The exact PHP version via banner grabbing",
+    "Whether a WAF (e.g. Wordfence) is present with wafw00f",
+    "The registrar from WHOIS",
+    "The IPv6 address with dig AAAA"
+  ]}
+  answer={1}
+  explanation="A WAF such as Wordfence will filter or block aggressive WordPress enumeration. Detecting it with wafw00f first lets you adapt tempo and payloads (or expect blocking) before generating noise with wpscan."
+/>
+
+## Attack Chains / Related Notes
+
+- **Came from:** [Recon & Enumeration index](/01-Recon-and-Enumeration/Infra-Enum), [Nmap network enumeration](/01-Recon-and-Enumeration/Nmap-Network-Enumeration)
+- **Feeds into:** [DNS enumeration](/01-Recon-and-Enumeration/Service-Enum/DNS-53), [WordPress penetration testing](/01-Recon-and-Enumeration/WordPress-Penetration-Testing)
+- **Leads to:** directory/content brute forcing and targeted web vulnerability testing once endpoints, subdomains, and the tech stack are mapped.
+
+<div className="flex flex-wrap gap-2 mb-4">
+  <TagPill color="#ef4444">#Penetration Testing</TagPill>
+  <TagPill color="#f97316">#Red Team</TagPill>
+  <TagPill color="#10b981">#OSINT</TagPill>
+  <TagPill color="#14b8a6">#HTB</TagPill>
+  <TagPill color="#22c55e">#Certification</TagPill>
+</div>
