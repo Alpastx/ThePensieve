@@ -1,0 +1,141 @@
+# 🌐 Infrastructure Enumeration
+
+> [!TIP]
+> Domain/infrastructure information extends beyond subdomains - it's about mapping the entire Internet presence including certificates, DNS, cloud resources, and third-party services.
+
+---
+
+## Certificate Transparency (crt.sh)
+
+[Certificate Transparency](https://en.wikipedia.org/wiki/Certificate_Transparency) logs enable verification of issued digital certificates. This is a goldmine for subdomain discovery.
+
+| Task | Command |
+|------|---------|
+| **Basic Query (JSON)** | `curl -s "https://crt.sh/?q=target.com&output=json" \| jq` |
+| **Unique Subdomains** | See below |
+
+### Extract Unique Subdomains
+```bash
+curl -s "https://crt.sh/?q=target.com&output=json" | jq -r '.[].name_value' | sed 's/\*\.//g' | sort -u
+```
+
+### Resolve Subdomains to IPs
+```bash
+# Generate subdomain list first, then:
+for i in $(cat subdomainlist); do 
+    host $i | grep "has address" | cut -d" " -f1,4
+done
+```
+
+### Feed IPs to Shodan
+```bash
+# Save IPs to file
+for i in $(cat subdomainlist); do 
+    host $i | grep "has address" | cut -d" " -f4 >> ip-addresses.txt
+done
+
+# Query Shodan for each IP
+for i in $(cat ip-addresses.txt); do 
+    shodan host $i
+done
+```
+
+---
+
+## 📋 DNS Records
+
+DNS records reveal critical infrastructure details about the target.
+
+```bash
+dig ANY target.com
+```
+
+| Record Type | Purpose | What to Look For |
+|-------------|---------|------------------|
+| **A** | Maps domain to IPv4 | Target server IPs |
+| **AAAA** | Maps domain to IPv6 | IPv6 infrastructure |
+| **MX** | Mail server | Email provider (Google, O365, self-hosted) |
+| **NS** | Name servers | Hosting provider identification |
+| **TXT** | Verification/security | SPF, DKIM, DMARC, third-party verifications |
+| **CNAME** | Aliases | Subdomain takeover candidates |
+| **SOA** | Authority info | Admin email, update frequency |
+
+### TXT Record Security Components
+
+| Component | RFC | Purpose |
+|-----------|-----|---------|
+| [SPF](https://datatracker.ietf.org/doc/html/rfc7208) | RFC 7208 | Authorized mail senders |
+| [DMARC](https://datatracker.ietf.org/doc/html/rfc7489) | RFC 7489 | Email authentication policy |
+| [DKIM](https://datatracker.ietf.org/doc/html/rfc6376) | RFC 6376 | Email signature verification |
+
+---
+
+## ☁️ Cloud Resources
+
+> [!WARNING]
+> Cloud provider infrastructure security ≠ secure company configurations. Misconfigurations are common!
+
+### Common Cloud Storage
+
+| Provider | Service | Vulnerable Pattern |
+|----------|---------|-------------------|
+| AWS | S3 Buckets | `*.s3.amazonaws.com` |
+| Azure | Blob Storage | `*.blob.core.windows.net` |
+| GCP | Cloud Storage | `*.storage.googleapis.com` |
+
+### Google Dorks for Cloud Discovery
+
+```
+# AWS S3 Buckets
+intext:companyname inurl:amazonaws.com
+intext:companyname inurl:s3.amazonaws.com
+site:s3.amazonaws.com "companyname"
+
+# Azure Blobs
+intext:companyname inurl:blob.core.windows.net
+site:blob.core.windows.net "companyname"
+
+# GCP Storage
+intext:companyname inurl:storage.googleapis.com
+```
+
+### Specialized Tools
+
+| Tool | Purpose |
+|------|---------|
+| [GrayHatWarfare](https://grayhatwarfare.com) | Search exposed cloud storage |
+| [domain.glass](https://domain.glass) | Domain intelligence |
+| [Bucket Finder](https://github.com/digininja/bucket_finder) | S3 bucket enumeration |
+| [cloud_enum](https://github.com/initstring/cloud_enum) | Multi-cloud enumeration |
+
+---
+
+## 🔍 Additional Reconnaissance
+
+### Target Website Source Code
+- View source for hardcoded endpoints, API keys, S3 URLs
+- Check JavaScript files for API endpoints
+- Look for development/staging URLs in comments
+
+```bash
+# Extract URLs from page source
+curl -s https://target.com | grep -oP 'https?://[^"]+' | sort -u
+
+# Find JS files and check for secrets
+curl -s https://target.com | grep -oE 'src="[^"]*.js"' | cut -d'"' -f2
+```
+
+### Useful OSINT Resources
+
+| Resource | URL | Purpose |
+|----------|-----|---------|
+| crt.sh | https://crt.sh | Certificate transparency |
+| Shodan | https://shodan.io | Device/service search |
+| Censys | https://censys.io | Internet-wide scanning |
+| SecurityTrails | https://securitytrails.com | Historical DNS data |
+| BuiltWith | https://builtwith.com | Technology profiling |
+| Wayback Machine | https://web.archive.org | Historical snapshots |
+
+---
+
+#cpts #recon #osint #infrastructure #cloud #dns

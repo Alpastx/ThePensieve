@@ -1,0 +1,39 @@
+# Red Teaming : postable? - linkedinpost - 
+infra enum  : yes - merge post with nmap 
+nmap    : polish - NO
+web-recon : polish - merge with smth
+
+service-enum :- 
+DNS : NO - NO 
+FTP : NO - NO
+imap: no - no
+IPMI: no - no 
+mssql:no - no
+mysql:no - no
+NFS : no - no
+oracleTNS:no - no
+Rservices: No - NO
+RDP : no - no
+rsync : no - no
+SMB: no - no 
+SMTP: no - no
+snmp: no - no
+ssh : no - no 
+winrm : no - no
+WMI : no - no  
+
+post exp :
+priv esc :
+    linux : yes : no 
+    windows: no : no 
+Pillaging :
+    linux : no : no 
+    windows: no : no 
+
+File transfer : no : no 
+
+Web - Attacks : 
+XSS : no : no 
+LFI : no : no 
+
+
