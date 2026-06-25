@@ -1120,20 +1120,16 @@ div:has(> select option[value="light"]) {
   color: inherit;
 }
 
-/* ===== TAG PILLS (MDX / content) ===== */
+/* ===== CONTENT HASHTAGS (MDX / content) ===== */
 
-.pensieve-tag-pill {
-  display: inline-block;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  margin-right: 0.4rem;
-  margin-bottom: 0.25rem;
-  color: var(--pensieve-tag-pill-color, #a855f7);
-  background: color-mix(in srgb, var(--pensieve-tag-pill-color, #a855f7) 12%, transparent);
-  border: 1px solid color-mix(in srgb, var(--pensieve-tag-pill-color, #a855f7) 28%, transparent);
+.pensieve-hashtags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-top: 1rem;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--pensieve-accent, #a855f7);
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif;
 }

@@ -39,6 +39,7 @@ export default function Home() {
           width={420}
           height={420}
           style={{ borderRadius: "12px", opacity: 0.8 }}
+          unoptimized={true}
         />
       </section>
 
