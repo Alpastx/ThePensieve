@@ -1,6 +1,6 @@
 ---
 title: DNS - Port 53
-description: Enumeration and attack methodology for DNS on port 53 zone transfers (AXFR), subdomain enum, record recon, AD SRV discovery, and cache snooping.
+description: Enumeration and attack methodology for DNS on port 53 — zone transfers (AXFR), subdomain enum, record recon, AD SRV discovery, and cache snooping.
 ---
 
 # DNS - Port 53
@@ -10,12 +10,12 @@ import { Callout } from 'nextra/components'
 ## Cheatsheet
 
 ```bash
-# service detection (TCP + UDP)
+# Nmap — service detection (TCP + UDP)
 nmap -sV -sC -p53 <IP>
 nmap -sU -sV -p53 <IP>
 nmap --script "dns-*" -p53 <IP>
 
-# BIND version (CHAOS class) gets us DNS server software and version if available / not faked
+# BIND version (CHAOS class — no banner exists for DNS)
 dig CH TXT version.bind @<IP>
 
 # Zone transfer (highest-value check)
@@ -23,24 +23,20 @@ dig axfr <DOMAIN> @<IP>
 host -t axfr <DOMAIN> <IP>
 
 # Basic record queries
-dig any <DOMAIN> @<IP>     #returns all records, often ignored per RFC 8482
 dig ns <DOMAIN> @<IP>
 dig mx <DOMAIN> @<IP>
 dig txt <DOMAIN> @<IP>
 dig soa <DOMAIN> @<IP>
+dig any <DOMAIN> @<IP>
 dig aaaa <DOMAIN> @<IP>
 dig -x <IP> @<IP>
 
 # Subdomain enumeration
-amass enum -d <DOMAIN> -o subdomains.txt
 dnsenum --dnsserver <IP> --enum -f <WORDLIST> <DOMAIN>
-gobuster dns -d <DOMAIN> -w <WORDLIST> -r <IP-Specific-DNSserver> -t 50
+gobuster dns -d <DOMAIN> -w <WORDLIST> -r <IP> -t 50
 fierce --domain <DOMAIN> --dns-servers <IP>
 subfinder -d <DOMAIN>
 dnsx -d <DOMAIN> -w <WORDLIST>
-
-#reverse DNS looup
-cat IPS.txt | dnsx -ptr -resp-only
 
 # SRV records (Active Directory)
 dig srv _ldap._tcp.dc._msdcs.<DOMAIN> @<IP>
@@ -58,16 +54,16 @@ nmap --script dns-recursion -p53 <IP>
 ## Methodology
 
 <Callout type="important">
-DNS (port 53 TCP/UDP) is one of the highest-value enumeration targets. A successful zone transfer or thorough subdomain enum can map an entire internal network before you touch a single host. Every hostname, IP, and admin email you recover feeds the next phase, add them to `/etc/hosts`, your scan targets, and your spray lists.
+DNS (port 53 TCP/UDP) is one of the highest-value enumeration targets. A successful zone transfer or thorough subdomain enum can map an entire internal network before you touch a single host. Every hostname, IP, and admin email you recover feeds the next phase — add them to `/etc/hosts`, your scan targets, and your spray lists.
 </Callout>
 
 ### Phase 1: Identify and Fingerprint
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Questions to ask**
 
   - What DNS server software and version is running, and does it map to a CVE?
-  - Is the service answering on UDP, TCP, or both ? (and does that constrain AXFR?)
+  - Is the service answering on UDP, TCP, or both — and does that constrain AXFR?
   - Is this an AD-integrated DNS server (i.e. a domain controller)?
   - Is the version string real, or a deliberately faked value (itself a hardening signal)?
 </Callout>
@@ -77,19 +73,19 @@ DNS (port 53 TCP/UDP) is one of the highest-value enumeration targets. A success
 nmap -sV -sC -p53 <IP>
 nmap -sU -sV -p53 <IP>
 
-# Version via CHAOS class as DNS has no banner but this might be faked 
+# Version via CHAOS class — DNS has no banner
 dig CH TXT version.bind @<IP>
 dig CH TXT version.server @<IP>
 ```
 
-- [ ] `nmap -sV -sC -p53 <IP>` : detect server software and version.
-- [ ] `nmap -sU -sV -p53 <IP>` : confirm UDP 53 is open. Standard queries use UDP; TCP is reserved for zone transfers and oversized responses. A TCP-only DNS server is unusual and worth noting.
-- [ ] `dig CH TXT version.bind @<IP>` try to extract BIND version via the CHAOS class; `version.server` covers PowerDNS/Knot/NSD. Many admins forget to disable this, and the version maps directly to known CVEs.
-- [ ] `searchsploit <server>` and Google `<server> <version> exploit` : BIND has a long history of remote DoS and occasional RCE bugs.
-- [ ] If the target is a domain controller, AD-integrated DNS leaks the entire domain layout via SRV records; jump to Phase 5 immediately.
+- [ ] `nmap -sV -sC -p53 <IP>` — detect server software and version.
+- [ ] `nmap -sU -sV -p53 <IP>` — confirm UDP 53 is open. Standard queries use UDP; TCP is reserved for zone transfers and oversized responses. A TCP-only DNS server is unusual and worth noting.
+- [ ] `dig CH TXT version.bind @<IP>` — extract BIND version via the CHAOS class; `version.server` covers PowerDNS/Knot/NSD. Many admins forget to disable this, and the version maps directly to known CVEs.
+- [ ] `searchsploit <server>` and Google `<server> <version> exploit` — BIND has a long history of remote DoS and occasional RCE bugs.
+- [ ] If the target is a domain controller, AD-integrated DNS leaks the entire domain layout via SRV records — jump to Phase 5 immediately.
 
 <Callout type="info">
-DNS has no "banner" like FTP or SMTP. The version lives in a special bind/CHAOS namespace queried via `dig CH TXT version.bind`. A faked version string is itself a fingerprint someone configured it deliberately, suggesting a hardened deployment.
+DNS has no "banner" like FTP or SMTP. The version lives in a special bind/CHAOS namespace queried via `dig CH TXT version.bind`. A faked version string is itself a fingerprint — someone configured it deliberately, suggesting a hardened deployment.
 </Callout>
 
 **Move to Phase 2** once the server software and reachable transports are known. The zone transfer is the single highest-value check and comes first.
@@ -97,7 +93,7 @@ DNS has no "banner" like FTP or SMTP. The version lives in a special bind/CHAOS 
 ### Phase 2: Zone Transfer (AXFR)
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Questions to ask**
 
   - Does the primary nameserver allow AXFR from my IP?
   - Are there secondary nameservers with looser, forgotten transfer ACLs?
@@ -116,26 +112,26 @@ for z in internal dev staging admin test corp dmz intranet; do
     echo "=== $z.<DOMAIN> ==="; dig axfr $z.<DOMAIN> @<IP>
 done
 
-# Incremental transfer sometimes works when AXFR is blocked
+# Incremental transfer — sometimes works when AXFR is blocked
 dig ixfr=<SERIAL> <DOMAIN> @<IP>
 ```
 
-- [ ] `dig axfr <DOMAIN> @<IP>` attempt the transfer on the primary. A misconfigured `allow-transfer` dumps the entire zone the most valuable artifact in DNS recon.
+- [ ] `dig axfr <DOMAIN> @<IP>` — attempt the transfer on the primary. A misconfigured `allow-transfer` dumps the entire zone — the most valuable artifact in DNS recon.
 - [ ] `dig axfr <DOMAIN> @<NS_SERVER>` against each NS record. Zone transfer ACLs are per-server; secondaries are frequently misconfigured even when the primary is locked down.
-- [ ] Try common internal zone names with the loop above `internal`, `dev`, `staging`, `admin`, `test`, `corp`, `dmz`.
-- [ ] `dig ixfr=<SERIAL> <DOMAIN> @<IP>` incremental transfer may leak recent changes when servers protect AXFR but forget IXFR.
+- [ ] Try common internal zone names with the loop above — `internal`, `dev`, `staging`, `admin`, `test`, `corp`, `dmz`.
+- [ ] `dig ixfr=<SERIAL> <DOMAIN> @<IP>` — incremental transfer may leak recent changes when servers protect AXFR but forget IXFR.
 - [ ] On success: save the output, extract every hostname and IP, and prioritize internal-only names (`internal.*`, `dev.*`, `db.*`, `dc.*`, `vpn.*`). This is your network map.
 
 <Callout type="warning">
-**OPSEC:** Zone transfers are logged by every modern DNS server, and a failed AXFR is conspicuous in logs and frequently alerted on in mature SOCs. One attempt per nameserver is enough do not loop AXFR against every guessed zone name from a noisy source IP.
+**OPSEC:** Zone transfers are logged by every modern DNS server, and a failed AXFR is conspicuous in logs and frequently alerted on in mature SOCs. One attempt per nameserver is enough — do not loop AXFR against every guessed zone name from a noisy source IP.
 </Callout>
 
-**Move to Phase 3** whether AXFR succeeds or fails record enumeration fills the gaps a transfer misses and validates partial data.
+**Move to Phase 3** whether AXFR succeeds or fails — record enumeration fills the gaps a transfer misses and validates partial data.
 
 ### Phase 3: Record Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Questions to ask**
 
   - Which nameservers, mail servers, and TXT entries does the zone expose?
   - Does the SOA `RNAME` field hand me an admin email (a spray-able username)?
@@ -157,18 +153,19 @@ dig -x <IP> @<IP>
 for i in $(seq 1 254); do dig -x <SUBNET>.$i @<IP> +short; done | grep -v "^$"
 ```
 
-- [ ] `dig ns <DOMAIN> @<IP>` list nameservers; try AXFR against each (Phase 2).
-- [ ] `dig mx <DOMAIN> @<IP>` mail servers; feed into SMTP enumeration.
-- [ ] `dig txt <DOMAIN> @<IP>` SPF/DKIM/DMARC and verification tokens; occasionally leak API keys or internal hostnames.
-- [ ] `dig soa <DOMAIN> @<IP>` the `RNAME` field is the zone admin email with `.` replacing the first `@` (so `admin.example.com` = `admin@example.com`). Add this username to every spray list.
-- [ ] `dig aaaa <DOMAIN> @<IP>` and `dig -x <IP> @<IP>` IPv6 records are often unfiltered; reverse sweeps reveal infrastructure hosts missing from the forward zone.
+- [ ] `dig ns <DOMAIN> @<IP>` — list nameservers; try AXFR against each (Phase 2).
+- [ ] `dig mx <DOMAIN> @<IP>` — mail servers; feed into SMTP enumeration → [SMTP-25,587,465](/01-Recon-and-Enumeration/Service-Enum/SMTP-25,587,465).
+- [ ] `dig txt <DOMAIN> @<IP>` — SPF/DKIM/DMARC and verification tokens; occasionally leak API keys or internal hostnames.
+- [ ] `dig soa <DOMAIN> @<IP>` — the `RNAME` field is the zone admin email with `.` replacing the first `@` (so `admin.example.com` = `admin@example.com`). Add this username to every spray list.
+- [ ] `dig aaaa <DOMAIN> @<IP>` and `dig -x <IP> @<IP>` — IPv6 records are often unfiltered; reverse sweeps reveal infrastructure hosts missing from the forward zone.
 
 **Move to Phase 4** once direct queries are exhausted. Brute force then finds the hosts that no record explicitly advertised.
 
 ### Phase 4: Subdomain Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself yourself**
+  **Questions to ask**
+
   - Which subdomains exist that direct queries and AXFR did not reveal?
   - Is my wordlist large enough, or do sparse results justify escalating?
   - Are there vhost-based sites that only respond to the right `Host` header?
@@ -177,7 +174,7 @@ for i in $(seq 1 254); do dig -x <SUBNET>.$i @<IP> +short; done | grep -v "^$"
 
 ```bash
 # Brute force against the authoritative server
-gobuster dns -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -r <IP> -t 50 # -r is optional 
+gobuster dns -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-20000.txt -r <IP> -t 50
 dnsenum --dnsserver <IP> --enum -f /usr/share/seclists/Discovery/DNS/subdomains-top1million-5000.txt <DOMAIN>
 
 # Passive + active resolution
@@ -186,14 +183,14 @@ dnsx -d <DOMAIN> -w /usr/share/seclists/Discovery/DNS/subdomains-top1million-500
 fierce --domain <DOMAIN> --dns-servers <IP>
 ```
 
-- [ ] `gobuster dns -d <DOMAIN> -w <WORDLIST> -r <IP> -t 50` fast brute force, the workhorse for subdomain discovery.
-- [ ] `dnsenum --dnsserver <IP> --enum -f <WORDLIST> <DOMAIN>` combines AXFR attempts, brute force, and reverse lookups in one run.
-- [ ] `subfinder -d <DOMAIN>` and `dnsx -d <DOMAIN> -w <WORDLIST>` passive sources plus fast active resolution catch names brute force alone misses.
+- [ ] `gobuster dns -d <DOMAIN> -w <WORDLIST> -r <IP> -t 50` — fast brute force, the workhorse for subdomain discovery.
+- [ ] `dnsenum --dnsserver <IP> --enum -f <WORDLIST> <DOMAIN>` — combines AXFR attempts, brute force, and reverse lookups in one run.
+- [ ] `subfinder -d <DOMAIN>` and `dnsx -d <DOMAIN> -w <WORDLIST>` — passive sources plus fast active resolution catch names brute force alone misses.
 - [ ] If results are sparse, escalate wordlists: `subdomains-top1million-110000.txt`, `dns-Jhaddix.txt`, `bitquark-subdomains-top100000.txt`.
-- [ ] Add every discovered subdomain to `/etc/hosts` and feed them into vhost fuzzing. Vhost-based sites serve different content per `Host` header, so IP scans alone miss them.
+- [ ] Add every discovered subdomain to `/etc/hosts` and feed them into vhost fuzzing → [FFUF](/Tools/FFUF). Vhost-based sites serve different content per `Host` header, so IP scans alone miss them.
 
 <Callout type="info">
-When picking a first target among discovered hosts, CI/CD and dev infrastructure (`jenkins.`, `gitlab.`, `dev.`, `staging.`) usually win they run weaker security, expose default consoles, and frequently leak source code or hardcoded credentials. The lowest-security host is the fastest foothold.
+When picking a first target among discovered hosts, CI/CD and dev infrastructure (`jenkins.`, `gitlab.`, `dev.`, `staging.`) usually win — they run weaker security, expose default consoles, and frequently leak source code or hardcoded credentials. The lowest-security host is the fastest foothold.
 </Callout>
 
 **Move to Phase 5** if the target is (or might be) an Active Directory environment. Otherwise continue to Phase 6 for cache snooping and misconfig checks.
@@ -201,7 +198,7 @@ When picking a first target among discovered hosts, CI/CD and dev infrastructure
 ### Phase 5: Active Directory DNS Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself yourself**
+  **Questions to ask**
 
   - Where are the domain controllers, KDCs, and Global Catalog servers?
   - Does AD-integrated DNS expose the full service topology via SRV records?
@@ -221,18 +218,19 @@ for srv in _ldap._tcp _kerberos._tcp _gc._tcp _kpasswd._tcp _ldap._tcp.dc._msdcs
 done
 ```
 
-- [ ] `dig srv _ldap._tcp.dc._msdcs.<DOMAIN> @<IP>` find domain controllers; every AD-joined client uses this query to locate a DC.
-- [ ] `dig srv _kerberos._tcp.<DOMAIN> @<IP>` find KDCs (usually the same hosts as the DCs).
-- [ ] `dig srv _gc._tcp.<DOMAIN> @<IP>` Global Catalog servers expose forest-wide LDAP on port 3268.
-- [ ] `dig srv _kpasswd._tcp.<DOMAIN>` and `_sip._tcp.<DOMAIN>` password-change servers and VoIP systems (often underprotected, sometimes sharing AD creds).
-- [ ] Feed DC IPs into LDAP/SMB/Kerberos enum. SRV records reveal this topology with zero credentials.
+- [ ] `dig srv _ldap._tcp.dc._msdcs.<DOMAIN> @<IP>` — find domain controllers; every AD-joined client uses this query to locate a DC.
+- [ ] `dig srv _kerberos._tcp.<DOMAIN> @<IP>` — find KDCs (usually the same hosts as the DCs).
+- [ ] `dig srv _gc._tcp.<DOMAIN> @<IP>` — Global Catalog servers expose forest-wide LDAP on port 3268.
+- [ ] `dig srv _kpasswd._tcp.<DOMAIN>` and `_sip._tcp.<DOMAIN>` — password-change servers and VoIP systems (often underprotected, sometimes sharing AD creds).
+- [ ] Feed DC IPs into LDAP/SMB/Kerberos enum → [SMB-137,138,139-445(samba)](/01-Recon-and-Enumeration/Service-Enum/SMB-137,138,139-445(samba)). SRV records reveal this topology with zero credentials.
 
 **Move to Phase 6** with the AD topology mapped. Cache snooping then reveals what the network's users are actually doing.
 
 ### Phase 6: Cache Snooping and Recursion
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Questions to ask**
+
   - Is the resolver recursive/open, enabling tunneling and amplification?
   - Which external domains have internal users queried recently (cache contents)?
   - Does cache data reveal internal SaaS apps that might share AD credentials?
@@ -244,7 +242,7 @@ done
 dig google.com @<IP>
 nmap --script dns-recursion -p53 <IP>
 
-# Cache snooping  non-recursive query returns only cached answers
+# Cache snooping — non-recursive query returns only cached answers
 dig +norecurse <DOMAIN> @<IP>
 nmap --script dns-cache-snoop -p53 <IP>
 
@@ -252,17 +250,17 @@ nmap --script dns-cache-snoop -p53 <IP>
 dig +dnssec <DOMAIN> @<IP>
 ```
 
-- [ ] `dig google.com @<IP>`  if the server resolves external domains for you, it is an open resolver, exploitable for amplification, poisoning, and tunneling egress.
-- [ ] `dig +norecurse <DOMAIN> @<IP>` a cached answer means the domain was queried recently by someone on the network; `nmap --script dns-cache-snoop` automates this across a list.
+- [ ] `dig google.com @<IP>` — if the server resolves external domains for you, it is an open resolver, exploitable for amplification, poisoning, and tunneling egress.
+- [ ] `dig +norecurse <DOMAIN> @<IP>` — a cached answer means the domain was queried recently by someone on the network; `nmap --script dns-cache-snoop` automates this across a list.
 - [ ] Use cache contents to fingerprint internal services and SaaS apps for targeted phishing or credential-reuse hunting.
-- [ ] `dig +dnssec <DOMAIN> @<IP>` absent DNSSEC makes cache poisoning theoretically viable on a vulnerable resolver; document it.
+- [ ] `dig +dnssec <DOMAIN> @<IP>` — absent DNSSEC makes cache poisoning theoretically viable on a vulnerable resolver; document it.
 
 **Move to Phase 7** to formalize the remaining misconfiguration findings for the report.
 
 ### Phase 7: Misconfiguration Checks
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Questions to ask**
 
   - Is the resolver open to the world, and is recursion exposed externally?
   - Does the absence of SPF/DMARC make email spoofing a valid finding?
@@ -692,6 +690,9 @@ DNS findings rarely stand alone. Every record you pull is an input to the next p
   explanation="Without credentials, the highest-EV target is the one most likely to give you a foothold fastest. Jenkins and GitLab routinely ship default consoles, anonymous read access, and repos full of hardcoded secrets — the textbook easy first foothold. DCs are the eventual goal but yield nothing without at least one credential. Full Nmap scans are valuable but slower; run them in parallel while poking the high-EV web targets. VPNs rarely accept default creds in modern environments."
 />
 
-<div className="pensieve-hashtags">
-  #Penetration-Testing #Linux #Red-Team #Certification
+<div className="flex flex-wrap gap-2 mb-4">
+  <TagPill color="#ef4444">#Penetration Testing</TagPill>
+  <TagPill color="#fcc629">#Linux</TagPill>
+  <TagPill color="#f97316">#Red Team</TagPill>
+  <TagPill color="#22c55e">#Certification</TagPill>
 </div>
