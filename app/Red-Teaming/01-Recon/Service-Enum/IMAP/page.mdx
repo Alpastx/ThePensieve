@@ -1,0 +1,373 @@
+---
+title: IMAP / POP3 - Ports 143, 993, 110, 995
+description: Enumeration and attack methodology for IMAP and POP3 mail access, covering capability fingerprinting, credential attacks, reading mailboxes, NTLM hash capture, and pillaging email for credentials.
+---
+
+# IMAP / POP3 - Ports 143, 993, 110, 995
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+# Nmap — service detection + capability/NTLM scripts
+nmap -sV -sC -p110,143,993,995 <IP>
+nmap --script imap-capabilities,pop3-capabilities -p143,110 <IP>
+nmap --script imap-ntlm-info,pop3-ntlm-info -p143,110 <IP>
+
+# Encrypted connections (read banner + capabilities over TLS)
+openssl s_client -connect <IP>:993         # IMAPS
+openssl s_client -connect <IP>:995         # POP3S
+
+# Credential attacks (spray harvested creds first, brute last)
+hydra -L users.txt -P passwords.txt <IP> imap
+hydra -L users.txt -P passwords.txt <IP> imaps -s 993
+hydra -L users.txt -P passwords.txt <IP> pop3
+hydra -L users.txt -P passwords.txt <IP> pop3s -s 995
+
+# cURL — fast bulk read (IMAP)
+curl -k 'imaps://<IP>' --user <USER>:<PASS>                 # list folders
+curl -k 'imaps://<IP>/INBOX;UID=1' --user <USER>:<PASS>     # fetch message
+curl -k 'imaps://<IP>/INBOX?SUBJECT password' --user <USER>:<PASS>  # server-side search
+
+# cURL — POP3
+curl -k 'pop3s://<IP>' --user <USER>:<PASS>                 # list messages
+curl -k 'pop3s://<IP>/1' --user <USER>:<PASS>               # fetch message 1
+
+# Dump every message in INBOX (IMAP via cURL loop)
+for i in $(seq 1 100); do curl -k "imaps://<IP>/INBOX;UID=$i" --user <USER>:<PASS> 2>/dev/null; done > emails.txt
+```
+
+```text
+# Manual banner grab — IMAP / POP3 (cleartext)
+nc -nv <IP> 143
+nc -nv <IP> 110
+```
+
+## Methodology
+
+<Callout type="important">
+The value of mail services is the **contents of the mailbox**, not the protocol. Emails routinely contain plaintext credentials, password-reset links, internal hostnames, VPN configs, and sensitive attachments. Pair IMAP/POP3 with SMTP user discovery for the highest yield — SMTP hands you the usernames, IMAP/POP3 lets you read what those users received. Every credential found in a mailbox is sprayed against every other service.
+</Callout>
+
+### Phase 1: Fingerprint and Capabilities
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - What mail server and version answers on 143/110, and are 993/995 also open?
+  - Which auth mechanisms does `CAPABILITY` advertise (`LOGINDISABLED`, `STARTTLS`, `AUTH=PLAIN`, `AUTH=NTLM`)?
+  - Does NTLM auth leak the hostname and AD domain pre-auth?
+  - Are only cleartext ports open, meaning my credential exchange is sniffable?
+  - Are there known CVEs for this exact server version?
+</Callout>
+
+```bash
+# Detect software, version, and which of the 4 ports are open
+nmap -sV -sC -p110,143,993,995 <IP>
+
+# List accepted auth mechanisms before guessing passwords
+nmap --script imap-capabilities -p143 <IP>
+nmap --script pop3-capabilities -p110 <IP>
+
+# Pre-auth NTLM info disclosure (hostname, NetBIOS/DNS domain, OS build)
+nmap --script imap-ntlm-info -p143 <IP>
+nmap --script pop3-ntlm-info -p110 <IP>
+
+# Known-CVE lookup
+searchsploit dovecot
+searchsploit cyrus imap
+```
+
+- [ ] `nmap -sV -sC -p110,143,993,995 <IP>` — detect software and version. Common targets: Dovecot, Courier, Cyrus, Exchange, hMailServer. Confirm whether the TLS ports (993/995) are reachable.
+- [ ] `nc -nv <IP> 143` / `nc -nv <IP> 110` — banner grab. Most servers leak the exact product and version in the greeting.
+- [ ] `nmap --script imap-capabilities -p143 <IP>` — list IMAP capabilities. `LOGINDISABLED` means auth is blocked on this port; `STARTTLS` allows an encryption upgrade; `AUTH=PLAIN`/`AUTH=NTLM` reveal accepted mechanisms. Knowing this before guessing passwords avoids wasting cycles against a method the server rejects.
+- [ ] `nmap --script pop3-capabilities -p110 <IP>` — same for POP3; `USER`, `APOP`, `SASL` reveal accepted auth methods.
+- [ ] `nmap --script imap-ntlm-info -p143 <IP>` (and `pop3-ntlm-info`) — if NTLM auth is supported, this discloses hostname, NetBIOS name, DNS domain, and OS build **without credentials**. A free AD-enumeration win even if you never get a password.
+- [ ] `searchsploit dovecot` / `cyrus imap` — check the exact version against public exploits.
+
+**Move to Phase 2** once you know the server, version, accepted auth mechanisms, and have captured any NTLM info disclosure. Capability data tells you which credential attacks are even possible.
+
+### Phase 2: Credential Attacks
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which harvested credentials (SMTP-enumerated users, FTP, web, LDAP, DB) should I spray first?
+  - Does the capability list actually accept the auth mechanism I'm about to use?
+  - What lockout policy applies (especially AD-backed Exchange) before I spray?
+  - Should I target the cleartext or TLS port to balance reliability against sniffability?
+  - If NTLM auth is offered, can I capture or relay Net-NTLMv2 instead of guessing?
+</Callout>
+
+```bash
+# Spray harvested credentials first (mail = highest reuse rate)
+hydra -L users.txt -P passwords.txt <IP> imap
+hydra -L users.txt -P passwords.txt <IP> pop3
+
+# TLS-wrapped ports
+hydra -L users.txt -P passwords.txt <IP> imaps -s 993
+hydra -L users.txt -P passwords.txt <IP> pop3s -s 995
+
+# Capture relayed Net-NTLMv2 if NTLM auth is in play (internal engagements)
+sudo responder -I <INTERFACE>
+```
+
+- [ ] Spray credentials harvested elsewhere first — SMTP-enumerated usernames, web app accounts, FTP creds, LDAP binds, DB passwords. Mail accounts are the #1 reuse target because users tie everything else to them.
+- [ ] `hydra -L users.txt -P passwords.txt <IP> imap` / `... pop3` — brute force the cleartext ports. A successful login returns the account and password; failures are logged server-side.
+- [ ] `hydra ... imaps -s 993` / `... pop3s -s 995` — target the TLS ports when only those are open, or to avoid sending credentials in cleartext.
+- [ ] Try lazy combos like `username:username` and `username:Welcome1` — bulk-created mail accounts often share trivially predictable initial passwords.
+- [ ] If `AUTH=NTLM` is offered, `sudo responder -I <INTERFACE>` can capture relayed Net-NTLMv2 when a misconfigured client authenticates to your interface — crack offline or relay.
+
+<Callout type="warning">
+**OPSEC:** Failed mail logins land in `/var/log/dovecot.log`, `/var/log/maillog`, and SIEM forwarders. AD-backed servers (Exchange) lock out after 5-10 failures. Use targeted spraying — small username lists, common passwords, slow rate — never a full wordlist blast.
+</Callout>
+
+**Move to Phase 3** the moment any credential validates — reading the mailbox is where the loot is. If brute force stalls, return to Phase 1/SMTP enumeration for more usernames before escalating.
+
+### Phase 3: Read Emails (Post-Authentication)
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which folders exist beyond INBOX (Sent, Drafts, Trash, Junk, Archive, custom)?
+  - What high-signal keywords surface credentials and reset links fastest?
+  - Am I reading non-destructively, or risking POP3 deleting messages on retrieval?
+  - Which attachments (`.ovpn`, SSH keys, documents) are worth pulling in full?
+  - What internal hostnames, IPs, and infra details do the messages reveal?
+</Callout>
+
+```text
+# IMAP — list folders, then search and fetch (non-destructive)
+a LOGIN <USER> <PASS>
+a LIST "" *
+a SELECT INBOX
+a SEARCH BODY "password"
+a FETCH 1 BODY[]
+```
+
+```text
+# POP3 — enumerate and read (RSET before QUIT if you marked deletions)
+USER <USER>
+PASS <PASS>
+STAT
+LIST
+RETR 1
+```
+
+```bash
+# cURL is far faster for bulk extraction
+curl -k 'imaps://<IP>' --user <USER>:<PASS>                 # list folders
+curl -k 'imaps://<IP>/INBOX;UID=1' --user <USER>:<PASS>     # one message
+for i in $(seq 1 100); do curl -k "imaps://<IP>/INBOX;UID=$i" --user <USER>:<PASS>; done > emails.txt
+```
+
+- [ ] IMAP: `a LIST "" *` then `a SELECT <folder>` — enumerate and open every mailbox. Prefer IMAP over POP3: it is non-destructive and supports server-side `SEARCH`.
+- [ ] POP3: `STAT` → `LIST` → `RETR <N>` — POP3 has only INBOX and may delete on retrieval. If you mark anything for deletion, `RSET` before `QUIT` or you destroy evidence and tip off the user.
+- [ ] Check **every** folder, not just INBOX — Sent (users mail credentials to themselves), Drafts, Trash (deleted reset emails), Junk, Archive, and custom folders.
+- [ ] Search high-signal keywords: `a SEARCH BODY "password"`, `"vpn"`, `"credential"`, `a SEARCH SUBJECT "reset"`, `"temp"`. Each hit returns matching message UIDs to fetch.
+- [ ] Bulk-dump with the cURL loop into `emails.txt`, then `grep -ri 'pass\|secret\|key\|token\|vpn'` across it — faster than reading interactively.
+
+**Move to Phase 4/5** once the mailbox is mined. Extracted credentials feed lateral movement; NTLM auth support feeds hash capture.
+
+### Phase 4: NTLM Hash Capture
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Does `CAPABILITY` advertise `AUTH=NTLM` on this server?
+  - Can I coax client mail traffic toward my interface to capture Net-NTLMv2?
+  - What did the pre-auth NTLM info script already reveal about the domain?
+  - Is the captured hash crackable, or better used in a relay?
+</Callout>
+
+```bash
+# Capture Net-NTLMv2 when NTLM auth is in play
+sudo responder -I <INTERFACE>
+
+# Re-pull the pre-auth NTLM info for domain/hostname context
+nmap --script imap-ntlm-info -p143 <IP>
+```
+
+- [ ] Confirm `AUTH=NTLM` in the `CAPABILITY` output before expecting any NTLM material.
+- [ ] `sudo responder -I <INTERFACE>` — capture Net-NTLMv2 if a misconfigured client can be steered to authenticate to your host; crack with hashcat/john or relay.
+- [ ] `nmap --script imap-ntlm-info -p143 <IP>` — even with no auth, this discloses hostname, NetBIOS name, DNS domain, and OS version; feed these into LDAP/SMB enumeration.
+
+**Move to Phase 5** with any cracked/relayed credential or fresh domain context in hand.
+
+### Phase 5: Credential Harvesting and Lateral Movement
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which services should the mailbox-sourced credentials hit first?
+  - Do the same IMAP/POP3 creds authenticate to SMTP for outbound phishing?
+  - Are any VPN configs or SSH keys in the mail immediately usable for a pivot?
+  - Are recent password-reset links still valid for account takeover?
+  - What does the org's password format (`Welcome2025!`) imply for spraying others?
+</Callout>
+
+```bash
+# Build a creds file as you go, then spray everywhere
+nxc ssh <IP> -u users.txt -p creds.txt
+nxc smb <IP> -u users.txt -p creds.txt
+nxc winrm <IP> -u users.txt -p creds.txt
+```
+
+- [ ] Extract every credential from mailbox content into a fresh `creds.txt` as you find it.
+- [ ] Spray those creds against SSH, SMB, WinRM, RDP, databases, and web admin panels — mail credentials have the highest reuse rate of any service.
+- [ ] Try the same IMAP/POP3 creds against SMTP → [SMTP-25,587,465](/01-Recon-and-Enumeration/Service-Enum/SMTP-25,587,465). If SMTP AUTH succeeds, you can send phishing from a real internal account that passes SPF/DKIM/DMARC.
+- [ ] If VPN configs (`.ovpn`) or SSH keys appear in attachments, connect and pivot to the internal network → [SSH-22](/01-Recon-and-Enumeration/Service-Enum/SSH-22).
+- [ ] Test recent password-reset links — they may still be valid and grant takeover of additional accounts; the password *format* also seeds sprays against other users.
+
+<Quiz
+  question="You crack a user's IMAP password and dump their mailbox. The INBOX is empty, but the Sent folder has an email from the user to themselves, subject 'creds backup', listing usernames/passwords for SSH, MySQL, and a WordPress admin panel. What's your priority order?"
+  options={[
+    "Hit MySQL first — direct database access yields the most data",
+    "Spray every credential across SSH/SMB/WinRM/RDP simultaneously, THEN target the named services",
+    "Log into WordPress — wp-admin is the fastest path to RCE via theme/plugin upload",
+    "Try the same passwords against the user's other mail folders to find more credentials"
+  ]}
+  answer={1}
+  explanation="A 'creds backup' email is a goldmine, but the highest-EV move is parallel spraying. Service-account passwords in this kind of dump are routinely reused across SSH/WinRM/SMB/RDP — netexec fires all of them in seconds and often surfaces admin access on hosts the user wasn't supposed to touch. Hit the named services (MySQL, WordPress) right after, but never skip the spray phase: WordPress RCE is great, but credential reuse is what gives you footing on *other* hosts."
+/>
+
+## Overview
+
+| Protocol | Port | Encryption | Purpose |
+|----------|------|-----------|---------|
+| IMAP | 143/TCP | None | Email access — messages stay on the server |
+| IMAPS | 993/TCP | TLS/SSL | Encrypted IMAP |
+| POP3 | 110/TCP | None | Email download — messages typically removed from the server |
+| POP3S | 995/TCP | TLS/SSL | Encrypted POP3 |
+
+**IMAP vs POP3 in practice:** IMAP keeps mail server-side and supports folder hierarchies, search, and partial fetches — far better for enumeration because you can browse, search, and re-read non-destructively. POP3 is download-and-delete by default; once retrieved a message may be gone, which limits mining and risks destroying evidence on a real engagement.
+
+<Callout type="info">
+Always prefer IMAP when both are available. POP3 has no folder concept (only INBOX), no server-side search, and may delete messages on retrieval. IMAP is non-destructive and supports `SEARCH BODY` queries that grep across years of email in one command.
+</Callout>
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Connect IMAP | `nc -nv <IP> 143` |
+| Connect IMAPS | `openssl s_client -connect <IP>:993` |
+| Connect POP3 | `nc -nv <IP> 110` |
+| Connect POP3S | `openssl s_client -connect <IP>:995` |
+| Nmap scan | `nmap -sV -sC -p110,143,993,995 <IP>` |
+| NTLM info | `nmap --script imap-ntlm-info -p143 <IP>` |
+| Brute force IMAP | `hydra -L users.txt -P passwords.txt <IP> imap` |
+| Brute force POP3 | `hydra -L users.txt -P passwords.txt <IP> pop3` |
+| cURL list folders | `curl -k 'imaps://<IP>' --user <USER>:<PASS>` |
+| cURL fetch email | `curl -k 'imaps://<IP>/INBOX;UID=1' --user <USER>:<PASS>` |
+
+## IMAP Commands
+
+| Command | Description |
+|---------|-------------|
+| `a LOGIN <USER> <PASS>` | Authenticate |
+| `a LIST "" *` | List all mailboxes/folders |
+| `a SELECT INBOX` | Open a mailbox |
+| `a SEARCH ALL` | Get all message UIDs |
+| `a SEARCH BODY "password"` | Search email bodies for a keyword |
+| `a SEARCH SUBJECT "reset"` | Search subjects |
+| `a FETCH 1 BODY[]` | Fetch full message (headers + body) |
+| `a FETCH 1 BODY[HEADER]` | Fetch headers only |
+| `a FETCH 1 BODY[TEXT]` | Fetch body only |
+| `a STORE 1 +FLAGS (\Deleted)` | Mark for deletion |
+| `a EXPUNGE` | Permanently delete marked messages |
+| `a CAPABILITY` | List server capabilities |
+| `a LOGOUT` | End session |
+
+<Callout type="info">
+The prefix (`a`, `b`, `1`, etc.) is a tag for matching responses to commands — the server echoes it back. It can be any short, consistent string.
+</Callout>
+
+## POP3 Commands
+
+| Command | Description |
+|---------|-------------|
+| `USER <USER>` | Specify username |
+| `PASS <PASS>` | Authenticate |
+| `STAT` | Mailbox stats (message count, total size) |
+| `LIST` | List all messages with sizes |
+| `RETR <N>` | Retrieve message N |
+| `TOP <N> <LINES>` | Get headers + first N lines of message N |
+| `DELE <N>` | Mark message N for deletion |
+| `CAPA` | List capabilities |
+| `RSET` | Undo all deletions in this session |
+| `QUIT` | End session (commits deletions) |
+
+<Callout type="warning">
+`QUIT` commits any `DELE` operations from the session. If you accidentally mark messages for deletion during enumeration, run `RSET` before quitting — otherwise you destroy evidence and tip off the user that someone was in the mailbox.
+</Callout>
+
+## Nmap Scripts
+
+```bash
+# Default scripts across all four ports
+nmap -sV -sC -p110,143,993,995 <IP>
+
+# Targeted capability + NTLM info scripts
+nmap --script imap-capabilities -p143 <IP>
+nmap --script pop3-capabilities -p110 <IP>
+nmap --script imap-ntlm-info -p143 <IP>
+nmap --script pop3-ntlm-info -p110 <IP>
+
+# All mail scripts
+nmap --script "imap-* or pop3-*" -p110,143,993,995 <IP>
+```
+
+| Script | Purpose |
+|--------|---------|
+| `imap-capabilities` | List IMAP server capabilities |
+| `pop3-capabilities` | List POP3 server capabilities |
+| `imap-ntlm-info` | NTLM auth info disclosure (hostname, domain, OS) |
+| `pop3-ntlm-info` | Same for POP3 |
+
+## Dovecot Configuration Reference
+
+Dovecot is the most common IMAP/POP3 backend on Linux. When you compromise a mail server (or read its config via LFI), these settings indicate misconfiguration.
+
+**Config file:** `/etc/dovecot/dovecot.conf`
+
+| Setting | Risk |
+|---------|------|
+| `auth_debug_passwords = yes` | Logs plaintext passwords to log files |
+| `auth_verbose_passwords = yes` | Logs submitted passwords (may be truncated) |
+| `disable_plaintext_auth = no` | Allows plaintext auth over unencrypted connections |
+| `auth_anonymous_username` | Anonymous SASL mechanism enabled |
+| `ssl = no` | No encryption — credentials in cleartext |
+
+If `auth_debug_passwords = yes` is set, dump `/var/log/dovecot.log` and `/var/log/mail.log` immediately — every successful login writes the plaintext password to the log. This is the highest-value misconfiguration on a compromised mail server.
+
+## Common Mistakes
+
+<Callout type="error">
+  - **Only reading INBOX** — Sent, Drafts, and Trash are where users stash credentials and forgotten reset emails. Enumerate every folder.
+  - **Forgetting `RSET` on POP3** — a stray `DELE` plus `QUIT` permanently deletes mail, destroys evidence, and tips off the user.
+  - **Brute forcing before spraying harvested creds** — mail accounts have the highest reuse rate; try known credentials and lazy combos before any wordlist blast.
+  - **Skipping `CAPABILITY`** — guessing passwords against an auth mechanism the server rejects wastes time and noise. Read capabilities first.
+  - **Not recycling mailbox creds** — every password found in mail must be sprayed against SSH, SMB, WinRM, RDP, databases, and SMTP immediately.
+  - **Ignoring the cleartext-vs-TLS choice** — authenticating on 143/110 when 993/995 exist exposes credentials to anyone sniffing the wire.
+</Callout>
+
+<Quiz
+  question="You read through a user's INBOX and find a password reset email from two weeks ago. The temporary password is `Welcome2024!`. Is this useful?"
+  options={[
+    "No — it's two weeks old and certainly changed by now",
+    "Yes — try it as-is, infer the org's password template to spray others, and test it against other services",
+    "Only if you also find the username in the same email",
+    "No — temporary passwords are single-use and expire on first login"
+  ]}
+  answer={1}
+  explanation="It's useful three ways. First, the temp password may still be active if the user never changed it — try it. Second, the format (`Welcome` + year + `!`) reveals the org's password template, so spray `Welcome2025!`/`Welcome2026!` against other users. Third, the user may have reused it on a different service (web portal, VPN, internal app) where it still works even after they changed their email password."
+/>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  <TagPill color="#ef4444">#Penetration Testing</TagPill>
+  <TagPill color="#f97316">#Red Team</TagPill>
+  <TagPill color="#22c55e">#Certification</TagPill>
+  <TagPill color="#fcc629">#Linux</TagPill>
+</div>
