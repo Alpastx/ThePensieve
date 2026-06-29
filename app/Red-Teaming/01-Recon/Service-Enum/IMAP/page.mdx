@@ -38,9 +38,47 @@ nmap --script imap-ntlm-info,pop3-ntlm-info -p143,110 <IP>
 nc -nv <IP> 143
 nc -nv <IP> 110
 
-# Encrypted connections (TLS)
-openssl s_client -connect <IP>:993 -crlf -quiet
+
+# IMAPs 
+# manual interaction got em from https://donsutherland.org/crib/imap 
+telnet target.com 143
+
+# Encrypted connections
+openssl s_client -connect <IP>:993 -crlf -quiet 
+
+A1 LOGIN <USER> <PASS>  #login 
+A2 LIST "" * #list all folders
+A3 LIST "INBOX" * #list inbox folder
+A4 SELECT "INBOX" #select inbox folder 
+A5 UID SEARCH ALL #search all messages this will fetch uid with message ids
+A4 UID FETCH <UID> BODY[] #fetch full message
+A7 LOGOUT #logout
+
+# POP3
+telnet <IP> 110
+#encryted 
 openssl s_client -connect <IP>:995 -crlf -quiet
+USER username
+PASS password
+APOP <name> <digest> # auth with MD5 digest instead of plaintext pass
+CAPA                      # Lists server-supported capabilities
+
+## 2. Mailbox Status & Summary
+
+STAT                      # Returns total number of messages and total mailbox size
+LIST                      # Lists all message IDs with respective sizes in octets
+LIST <msg#>               # Retrieves the size of a specific message (by number)
+UIDL                      # Lists unique IDs for all messages (track across sessions)
+## 3. Retrieving & Reading Messages
+RETR <msg#>               # Fetches the full content (headers + body) of the specified message
+TOP <msg#> <lines>        # Fetches message headers and <lines> of body (partial preview)
+## 4. Deletion & Session Management
+DELE <msg#>               # Marks a message for deletion (deleted after QUIT)
+RSET                      # Undoes any message deletions for the session
+NOOP                      # Sends a keepalive/no-operation command
+QUIT                      # Ends session and deletes messages marked with DELE
+
+
 
 # Credential attacks (spray harvested creds first, brute last)
 hydra -L users.txt -P passwords.txt <IP> imap
@@ -58,10 +96,10 @@ curl -k 'pop3s://<IP>' --user <USER>:<PASS>
 curl -k 'pop3s://<IP>/1' --user <USER>:<PASS>
 
 # Dump every message in INBOX (IMAP via cURL loop)
-for i in $(seq 1 100); do curl -k "imaps://<IP>/INBOX;UID=$i" --user <USER>:<PASS> 2>/dev/null; done > emails.txt
+for i in $(seq 1 100); do curl -k "imaps://<IP>/INBOX;UID=$i" --user <USER>:<PASS>; done > emails.txt
 
 # Dump POP3 messages
-for i in $(seq 1 100); do curl -k "pop3s://<IP>/$i" --user <USER>:<PASS> 2>/dev/null; done > emails.txt
+for i in $(seq 1 100); do curl -k "pop3s://<IP>/$i" --user <USER>:<PASS>; done > emails.txt
 ```
 
 ## Methodology
