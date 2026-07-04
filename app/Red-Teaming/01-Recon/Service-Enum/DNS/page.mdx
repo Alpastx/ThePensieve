@@ -34,9 +34,9 @@ import { Callout } from 'nextra/components'
 nmap -sV -sC -p53 <IP>
 nmap -sU -sV -p53 <IP>
 nmap --script "dns-*" -p53 <IP>
-
 # BIND version (CHAOS class no banner exists for DNS)
 dig CH TXT version.bind @<IP>
+
 
 # Zone transfer (highest-value check)
 dig axfr <DOMAIN> @<IP>
@@ -77,7 +77,7 @@ nmap --script dns-recursion -p53 <IP>
 ### Phase 1: Identify and Fingerprint
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - What DNS server software and version is running, and does it map to a CVE?
   - Is the service answering on UDP, TCP, or both and does that constrain AXFR?
@@ -108,7 +108,7 @@ DNS has no "banner" like FTP or SMTP. The version lives in a special bind/CHAOS 
 ### Phase 2: Zone Transfer (AXFR)
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Does the primary nameserver allow AXFR from my IP?
   - Are there secondary nameservers with looser, forgotten transfer ACLs?
@@ -140,7 +140,7 @@ dig ixfr=<SERIAL> <DOMAIN> @<IP>
 ### Phase 3: Record Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which nameservers, mail servers, and TXT entries does the zone expose?
   - Does the SOA `RNAME` field hand me an admin email (a spray-able username)?
@@ -171,7 +171,7 @@ for i in $(seq 1 254); do dig -x <SUBNET>.$i @<IP> +short; done | grep -v "^$"
 ### Phase 4: Subdomain Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which subdomains exist that direct queries and AXFR did not reveal?
   - Is my wordlist large enough, or do sparse results justify escalating?
@@ -203,7 +203,7 @@ When picking a first target among discovered hosts, CI/CD and dev infrastructure
 ### Phase 5: Active Directory DNS Enumeration
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Where are the domain controllers, KDCs, and Global Catalog servers?
   - Does AD-integrated DNS expose the full service topology via SRV records?
@@ -232,7 +232,7 @@ done
 ### Phase 6: Cache Snooping and Recursion
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Is the resolver recursive/open, enabling tunneling and amplification?
   - Which external domains have internal users queried recently (cache contents)?
@@ -263,7 +263,7 @@ dig +dnssec <DOMAIN> @<IP>
 ### Phase 7: Misconfiguration Checks
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Is the resolver open to the world, and is recursion exposed externally?
   - Does the absence of SPF/DMARC make email spoofing a valid finding?
@@ -613,5 +613,5 @@ dc01         IN     A       10.10.1.2
 />
 
 <div className="flex flex-wrap gap-2 mb-4">
-  #PenetrationTesting #Linux #RedTeam #Certification
+  #PenetrationTesting #Linux #RedTeam #Certification #DNS #AXFR #ZoneTransfer #SubdomainEnum #ActiveDirectory #ServiceEnum #Recon #BIND #Gobuster #Nmap #OSINT
 </div>

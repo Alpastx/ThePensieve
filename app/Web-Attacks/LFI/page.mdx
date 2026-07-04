@@ -72,7 +72,7 @@ ffuf -w /usr/share/seclists/Fuzzing/LFI/LFI-Jhaddix.txt:FUZZ \
 ### Phase 1: Map the Surface
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - Which parameters, path segments, headers, cookies, or stored fields select a file (`?page=`, `?language=`, `?file=`, `/view/<name>`, theme selectors, avatars)?
   - What auth state reaches each input: unauthenticated, low-priv user, or admin?
@@ -98,7 +98,7 @@ curl -sk 'http://<HOST>/index.php?language=en'
 ### Phase 2: Identify the Context / Sink
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - What backend language or framework is handling this route: PHP, NodeJS, Java, .NET, or something else?
   - Which sink is likely: `include`, `require`, `file_get_contents`, `fs.readFile`, `res.render`, `jsp:include`, `Response.WriteFile`, or `@Html.Partial`?
@@ -124,7 +124,7 @@ curl -sk 'http://<HOST>/index.php?language=nonexistent'
 ### Phase 3: Source -> Sink Review (White-Box)
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - What request-reachable sources feed the file path: `$_GET`, `$_POST`, `$_REQUEST`, cookies, route params, `req.query`, `request.getParameter`, or `Request.Query`?
   - What file sinks exist in the codebase?
@@ -149,7 +149,7 @@ rg -n "\$_(GET|POST|REQUEST|COOKIE)|req\.(query|body|params|headers|cookies)|req
 ### Phase 4: Confirm the Vulnerability
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - Can I read a known local file and prove inclusion, not just reflected input?
   - If direct absolute paths fail, how many `../` levels reach the filesystem root?
@@ -181,7 +181,7 @@ curl -sk 'http://<HOST>/index.php?language=./languages/../../../../etc/passwd'
 ### Phase 5: Source Disclosure and Secret Harvesting
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - Can `php://filter` return source as base64 before the sink executes it?
   - Which files are highest value first: `index.php`, route/controller files, `config.php`, `.env`, included libraries, and `php.ini`?
@@ -208,7 +208,7 @@ curl -sk 'http://<HOST>/index.php?language=php://filter/read=convert.base64-enco
 ### Phase 6: Exploit / Weaponize to RCE
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - Does the sink execute included content? If not, can read-only impact still lead to creds or keys?
   - Which RCE primitive fits confirmed evidence: `data://`, `php://input`, `expect://`, RFI, malicious upload, log poisoning, or session poisoning?
@@ -246,7 +246,7 @@ curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>&cmd=
 ### Phase 7: Chain and Recover
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **Ask youself**
 
   - What is the best next step from the current proof: loot more files, reuse credentials, escalate to RCE, or stabilize a shell?
   - If every direct RCE path failed, which assumption should I retest: sink executes, wrapper support, log readability, upload path, traversal depth, or auth state?
@@ -583,5 +583,5 @@ union isfuzzy=true (WAF_CL), (W3CIISLog)
 />
 
 <div className="pensieve-hashtags">
-  #Penetration-Testing #Red-Team #HTB #Linux #Windows
+  #Penetration-Testing #Red-Team #HTB #Linux #Windows #LFI #RFI #FileInclusion #PHP #WebAttacks #RCE #PathTraversal #LogPoisoning #Wrappers #OWASP #Certification
 </div>

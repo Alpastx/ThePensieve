@@ -57,7 +57,7 @@ python xsstrike.py -u "http://<IP>/index.php?task=test"
 ### Phase 1: Map Inputs and Reflection Points
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which inputs reach the rendered page? form fields, URL params, headers (`User-Agent`, `Cookie`, `Referer`)?
   - Where does each input land back in the output: HTML body, an attribute, inside `<script>`, inside a URL, or a CSS context?
@@ -80,7 +80,7 @@ xss_probe_7531
 ### Phase 2: Confirm Execution
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Does the marker render as live HTML, or is it encoded (`&lt;`) i.e. is there output encoding in the way?
   - Does the context require a breakout first (close a tag/quote)?
@@ -105,7 +105,7 @@ xss_probe_7531
 ### Phase 3: Weaponize (Session Hijacking / Defacement)
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Is the session cookie flagged `HttpOnly`? If so, `document.cookie` theft fails pivot to in-browser actions (CSRF-style requests, account takeover).
   - Who triggers the payload? only me or every visitor?
@@ -131,7 +131,7 @@ xss_probe_7531
 ### Phase 4: Blind XSS
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which field fired? Name the remote script after the field so the callback identifies it.
   - Which payload shape works? 
@@ -232,5 +232,5 @@ Map to MITRE ATT&CK **T1059.007 (JavaScript)** and the OWASP A03:2021 Injection 
 - **Leads to:** Session hijacking and account takeover (replay stolen cookies into authenticated areas), CSRF-style privileged actions as the victim, and credential capture that feeds reuse against other services.
 
 <div className="pensieve-hashtags">
-  #Penetration-Testing #Red-Team
+  #Penetration-Testing #Red-Team #XSS #WebAttacks #JavaScript #DOM #StoredXSS #ReflectedXSS #SessionHijack #CSRF #Filters #OWASP #HTB #Certification #BugBounty
 </div>

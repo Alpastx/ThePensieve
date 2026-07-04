@@ -31,8 +31,6 @@ import { Callout } from 'nextra/components'
 ```bash
 # Banner grab
 nc -nv <IP> 21
-
-# Nmap service detection + default scripts
 nmap -sV -sC -p21 <IP>
 
 # Nmap all FTP scripts
@@ -42,30 +40,14 @@ nmap --script ftp-anon,ftp-bounce,ftp-syst,ftp-vsftpd-backdoor,ftp-proftpd-backd
 # Enumerate FTP server features (FEAT command)
 nmap -p21 --script ftp-features <IP>
 
-# Anonymous login
 ftp <IP>
-nxc ftp <IP> -u 'anonymous' -p 'anonymous'
+nxc ftp <IP> -u 'anonymous' -p 'anonymous'            # anonymous login
 
-# Connect with lftp (enhanced FTP client)
-lftp <IP> # lftp ftp://ourusername:ourpassword@<IP>
-lftp :~> login <USER> <PASS>
-# bookmark a ftp client in lftp prompt
-lftp :~> bookmark remotehost ftp://ouruser:ourpassword@ftp.remotehost.com # if already connected lftp :~> bookmark remotehost
-$ lftp remotehost
-
-# Credential spray from files
-nxc ftp <IP> -u users.txt -p passwords.txt
-
-# Password spray single password
-nxc ftp <IP> -u users.txt -p '<PASS>'
+# Cspray
+nxc ftp <IP> -u <userlist/username> -p <passwordlist/password>
 
 # Hydra brute force
 hydra -l <USER> -P /usr/share/wordlists/rockyou.txt -t 4 ftp://<IP>
-hydra -L users.txt -P passwords.txt -t 4 ftp://<IP>
-
-# FTP directory enumeration
-# helps when dir listing is restricted or hidden (rearley used)
-gobuster dir -u ftp://<IP> -w /usr/share/seclists/Discovery/Web-Content/common.txt
 
 # Recursive download 
 wget -m --no-passive ftp://<USER>:<PASS>@<IP>
@@ -87,6 +69,15 @@ nmap -sU -p69 <IP>
 tftp <IP>
 # tftp> get <FILE>
 # tftp> put <FILE>
+
+# Connect with lftp (enhanced FTP client)
+lftp <IP> # lftp ftp://ourusername:ourpassword@<IP>
+lftp :~> login <USER> <PASS>
+# bookmark a ftp client in lftp prompt
+lftp :~> bookmark remotehost ftp://ouruser:ourpassword@ftp.remotehost.com # if already connected lftp :~> bookmark remotehost
+$ lftp remotehost
+
+
 ```
 
 ## Methodology
@@ -94,7 +85,7 @@ tftp <IP>
 ### Phase 1: Fingerprint
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - What exact FTP implementation and version is responding?
   - Does the banner agree with Nmap and protocol behavior, or could it be customized?
@@ -126,7 +117,7 @@ searchsploit <server> <version>
 ### Phase 2: Anonymous / Null Access
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Can I authenticate anonymously, as `ftp`, or with a blank password?
   - Which directories and hidden files are readable?
@@ -161,7 +152,7 @@ nxc ftp <IP> -u 'anonymous' -p ''
 ### Phase 3: Default and Harvested Credentials
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Which usernames and passwords have already been discovered from other services?
   - Does the service authenticate local system accounts, domain accounts, or application accounts?
@@ -182,7 +173,7 @@ nxc ftp <IP> -u users.txt -p pass.txt # password list
 ### Phase 4: Misconfiguration Checks
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Is the server vulnerable to FTP bounce (PORT command accepting arbitrary addresses)?
   - Does the version match any known backdoor (vsFTPd 2.3.4) or unauthenticated module (ProFTPd mod_copy)?
@@ -199,8 +190,6 @@ nmap --script ftp-bounce -p21 <IP>
 # Inspect the FTPS certificate for internal hostnames / emails
 openssl s_client -connect <IP>:21 -starttls ftp
 
-# Directories hidden from ls but accessible by name
-gobuster dir -u ftp://<IP> -w /usr/share/seclists/Discovery/Web-Content/common.txt
 
 # TFTP no-auth UDP service that's easy to miss
 nmap -sU -p69 <IP>
@@ -215,7 +204,7 @@ nmap -sU -p69 <IP>
 ### Phase 5: Brute Force 
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - Have anonymous access, default credentials, and credential reuse been fully exhausted?
   - What lockout, rate-limit, and monitoring controls apply (fail2ban, PAM modules)?
@@ -242,7 +231,7 @@ nxc ftp <IP> -u users.txt -p passwords.txt
 ### Phase 6: Post-Access Actions
 
 <Callout type="default" emoji="?">
-  **Questions to ask yourself**
+  **Ask youself**
 
   - What files are accessible now that were not visible anonymously?
   - Do any downloaded files contain credentials, keys, or config data?
@@ -551,5 +540,5 @@ The most dangerous combination is `anonymous_enable=YES` + `anon_upload_enable=Y
 
 
 <div className="flex flex-wrap gap-2 mb-4">
-  #Penetration Testing #Red Team #Certification #Linux #Windows
+  #Penetration Testing #Red Team #Certification #Linux #Windows #FTP #ServiceEnum #Anonymous #Hydra #TFTP #NXC #Brute-Force #FileTransfer
 </div>
