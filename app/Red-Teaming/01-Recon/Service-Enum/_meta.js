@@ -9,6 +9,9 @@ const serviceEnumMeta = {
   'NFS': 'NFS - 111(UDP/TCP), 2049',
   'R-SERVICE': 'R-Services - 512, 513, 514',
   'ORACLE-TNS': 'Oracle TNS - 1521',
+  'SMB': 'SMB - 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)',
+  'SMTP': 'SMTP - 25, 587, 465',
+  'R-SYNC': 'R-Sync - 873',
 }
 
 export default serviceEnumMeta
