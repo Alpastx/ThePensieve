@@ -4,7 +4,11 @@ const serviceEnumMeta = {
   'IMAP': 'IMAP/POP3 - 143/993, 110/995',
   'IPMI': 'IPMI - 623',
   'MSSQL': 'MSSQL- 1433,2433,1434(UDP)',
-  'mysql': 'MySQL - 3306',
+  'MYSQL': 'MySQL - 3306',
+  'RDP': 'RDP - 3389',
+  'NFS': 'NFS - 111(UDP/TCP), 2049',
+  'R-SERVICE': 'R-Services - 512, 513, 514',
+  'ORACLE-TNS': 'Oracle TNS - 1521',
 }
 
 export default serviceEnumMeta

