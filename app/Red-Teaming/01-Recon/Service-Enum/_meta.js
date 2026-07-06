@@ -12,6 +12,11 @@ const serviceEnumMeta = {
   'SMB': 'SMB - 137/138(UDP), 139/445(TCP) (Samba/NetBIOS)',
   'SMTP': 'SMTP - 25, 587, 465',
   'R-SYNC': 'R-Sync - 873',
+  'WMI': 'WMI - 135',
+  'SSH': 'SSH - 22',
+  'WinRM': 'WinRM - 5985, 5986',
+  'WMI': 'WMI - 135',
+  'SNMP': 'SNMP - 161, 162',
 }
 
 export default serviceEnumMeta
