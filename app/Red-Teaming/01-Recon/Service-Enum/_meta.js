@@ -14,7 +14,7 @@ const serviceEnumMeta = {
   'R-SYNC': 'R-Sync - 873',
   'WMI': 'WMI - 135',
   'SSH': 'SSH - 22',
-  'WinRM': 'WinRM - 5985, 5986',
+  'WINRM': 'WinRM - 5985, 5986',
   'WMI': 'WMI - 135',
   'SNMP': 'SNMP - 161, 162',
 }
