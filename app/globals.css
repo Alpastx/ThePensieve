@@ -1062,6 +1062,69 @@ div:has(> select option[value="light"]) {
   color: #c084fc;
 }
 
+/* ===== MERMAID DIAGRAMS ===== */
+
+.pensieve-mermaid {
+  position: relative;
+  margin: 1.75rem 0;
+  overflow-x: auto;
+  border: 1px solid rgba(168, 85, 247, 0.16);
+  border-radius: 0.875rem;
+  background:
+    radial-gradient(
+      ellipse 80% 120% at 50% -25%,
+      rgba(168, 85, 247, 0.14),
+      transparent 58%
+    ),
+    rgba(255, 255, 255, 0.018);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.pensieve-mermaid::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 1.25rem;
+  left: 1.25rem;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(168, 85, 247, 0.45),
+    transparent
+  );
+  pointer-events: none;
+}
+
+.pensieve-mermaid svg {
+  display: block;
+  min-width: 42rem;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.pensieve-mermaid .node rect,
+.pensieve-mermaid .node polygon,
+.pensieve-mermaid .node circle,
+.pensieve-mermaid .node ellipse,
+.pensieve-mermaid .node path {
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.12));
+}
+
+.pensieve-mermaid .edgePath path,
+.pensieve-mermaid .flowchart-link {
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.16));
+}
+
+.pensieve-mermaid .edgeLabel,
+.pensieve-mermaid .label {
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif !important;
+}
+
 /* ===== CHECKBOXES (Task Lists) ===== */
 
 .dark li:has(> input[type="checkbox"]) {

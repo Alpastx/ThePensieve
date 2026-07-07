@@ -5,6 +5,12 @@ const withNextra = nextra({})
 export default withNextra({
   poweredByHeader: false,
   compress: true,
+  turbopack: {
+    resolveAlias: {
+      '@theguild/remark-mermaid/mermaid':
+        './lib/components/mermaid.client.tsx',
+    },
+  },
   images: {
     formats: ['image/avif', 'image/webp'],
     remotePatterns: [
