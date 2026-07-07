@@ -30,7 +30,7 @@ const clarityProjectId =
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
-  description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
+  description: 'Security & pentesting reference cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
   metadataBase: new URL(siteUrl),
   icons: { icon: '/sword.png' },
   alternates: {
