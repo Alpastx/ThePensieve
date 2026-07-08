@@ -17,12 +17,12 @@ export default function Home() {
           &ldquo;I use the Pensieve. One simply siphons the excess thoughts from
           one&rsquo;s mind, pours them into the basin, and examines them at
           one&rsquo;s leisure.&rdquo;
-          <cite>— Albus Dumbledore</cite>
+          <cite>~ Albus Dumbledore</cite>
         </p>
 
         <p className="pensieve-subtitle">
-          Built for the 16-year-old me who was navigating TryHackMe, HackTheBox, and the overwhelming world of cybersecurity.
-          This is a personal manual — every technique, every command, every memory — gathered and structured over time to conquer the chaos.
+          A personal Cook-Book built for the 16-year-old me who was navigating TryHackMe, HackTheBox, and the overwhelming world of cybersecurity.
+          This is a personal manual every technique, every command, every memory gathered and structured over time to conquer the chaos.
         </p>
 
         <a href="/Red-Teaming/00-Pre-Engagement" className="cta-button">

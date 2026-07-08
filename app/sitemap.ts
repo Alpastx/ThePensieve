@@ -1,21 +1,51 @@
 import type { MetadataRoute } from 'next'
+import { getPageMap } from 'nextra/page-map'
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://thepensieve.in'
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    { url: baseUrl, lastModified: new Date(), changeFrequency: 'weekly', priority: 1 },
-    { url: `${baseUrl}/Red-Teaming/00-Pre-Engagement`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Red-Teaming/01-Recon`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Red-Teaming/02-Pre-Exploit`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Red-Teaming/03-Exploitation`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Red-Teaming/04-Post-exploitation`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Red-Teaming/05-Lateral-Movement`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.9 },
-    { url: `${baseUrl}/Tools/Nmap`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${baseUrl}/Tools/rustscan`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${baseUrl}/Tools/Hydra`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${baseUrl}/Tools/Netcat`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${baseUrl}/Tools/Ffuf`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-    { url: `${baseUrl}/Tools/Meterpreter`, lastModified: new Date(), changeFrequency: 'monthly', priority: 0.8 },
-  ]
+type PageMapNode = {
+  name?: string
+  route?: string
+  children?: PageMapNode[]
+  frontMatter?: Record<string, unknown>
+  data?: unknown
+}
+
+/** Walk the Nextra page map and collect every real content route. */
+function collectRoutes(nodes: PageMapNode[], acc = new Set<string>()): Set<string> {
+  for (const node of nodes) {
+    if (node.children) {
+      collectRoutes(node.children, acc)
+      continue
+    }
+    // Skip `_meta` files (they carry `data`, not a page) and anchor links.
+    if (node.data || !node.route || node.route.includes('#')) continue
+    // Allow authors to hide WIP pages from search engines via frontmatter.
+    const fm = node.frontMatter ?? {}
+    if (fm.draft === true || fm.searchable === false || fm.sitemap === false) continue
+    acc.add(node.route)
+  }
+  return acc
+}
+
+/** Deeper pages are slightly less important; the homepage stays at 1. */
+function priorityFor(route: string): number {
+  if (route === '/') return 1
+  const depth = route.split('/').filter(Boolean).length
+  return Math.max(0.5, 1 - depth * 0.1)
+}
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const pageMap = (await getPageMap()) as PageMapNode[]
+  const routes = collectRoutes(pageMap)
+  const now = new Date()
+
+  return [...routes]
+    .sort()
+    .map((route) => ({
+      url: route === '/' ? baseUrl : `${baseUrl}${route}`,
+      lastModified: now,
+      changeFrequency: route === '/' ? 'weekly' : 'monthly',
+      priority: priorityFor(route),
+    }))
 }

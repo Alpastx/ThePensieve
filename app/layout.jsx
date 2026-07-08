@@ -30,8 +30,27 @@ const clarityProjectId =
 
 export const metadata = {
   title: { default: 'The Pensieve', template: '%s | The Pensieve' },
-  description: 'Security & pentesting reference cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
+  description: 'Security & pentesting reference cheatsheets, methodology a personal cookbook.',
   metadataBase: new URL(siteUrl),
+  applicationName: 'The Pensieve',
+  authors: [{ name: 'Alpesh Bhagwatkar', url: 'https://github.com/Alpastx' }],
+  creator: 'Alpesh Bhagwatkar',
+  publisher: 'The Pensieve',
+  keywords: [
+    'pentesting',
+    'penetration testing',
+    'red teaming',
+    'cybersecurity',
+    'cheatsheets',
+    'security methodology',
+    'CTF',
+    'privilege escalation',
+    'web attacks',
+    'OSCP',
+    'HackTheBox',
+    'TryHackMe',
+  ],
+  category: 'technology',
   icons: { icon: '/sword.png' },
   alternates: {
     canonical: siteUrl,
@@ -42,13 +61,22 @@ export const metadata = {
     url: siteUrl,
     siteName: 'The Pensieve',
     title: 'The Pensieve',
-    description: 'Security & pentesting reference — cheatsheets, methodology, and tools for red teaming, OSCP, CPTS, and more.',
+    description: 'Security & pentesting reference cheatsheets, methodology a personal cookbook.',
+    images: [
+      {
+        url: '/imgs/homepage.jpg',
+        width: 1672,
+        height: 941,
+        alt: 'The Pensieve : A personal cookbook for security & pentesting reference cheatsheets, methodology.',
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    card: 'summary_large_image',
     title: 'The Pensieve',
-    description: 'Security & pentesting reference — cheatsheets, methodology, and tools.',
+    description: 'Security & pentesting reference cheatsheets, methodology a personal cookbook.',
     creator: '@Alpastx',
+    images: ['/imgs/homepage.jpg'],
   },
   robots: {
     index: true,
@@ -97,6 +125,41 @@ const footer = (
   </footer>
 )
 
+const jsonLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebSite',
+      '@id': `${siteUrl}/#website`,
+      url: siteUrl,
+      name: 'The Pensieve',
+      description:
+        'Security & pentesting reference cheatsheets, methodology a personal cookbook.',
+      inLanguage: 'en',
+      publisher: { '@id': `${siteUrl}/#person` },
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: {
+          '@type': 'EntryPoint',
+          urlTemplate: `${siteUrl}/?q={search_term_string}`,
+        },
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@type': 'Person',
+      '@id': `${siteUrl}/#person`,
+      name: 'Alpesh Bhagwatkar',
+      url: siteUrl,
+      sameAs: [
+        'https://github.com/Alpastx',
+        'https://x.com/Alpastx',
+        'https://www.linkedin.com/in/alpesh-bhagwatkar/',
+      ],
+    },
+  ],
+}
+
 export default async function RootLayout({ children }) {
   const docsRepo = process.env.NEXT_PUBLIC_DOCS_REPO || 'https://github.com/Alpastx/ThePensieve'
 
@@ -109,6 +172,12 @@ export default async function RootLayout({ children }) {
     >
       <Head />
       <body>
+        <Script
+          id="ld-json"
+          type="application/ld+json"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
         {gaMeasurementId ? (
           <>
             <Script
