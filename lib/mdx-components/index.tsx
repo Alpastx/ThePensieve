@@ -16,6 +16,7 @@ import { removeLinks } from 'nextra/remove-links'
 import type { FC, HTMLAttributes, ReactNode } from 'react'
 import { ModuleGroup, Quiz, Sidebar } from '../components'
 import { TOCProvider } from '../stores'
+import { Checkbox } from './checkbox.client'
 import { H1, H2, H3, H4, H5, H6 } from './heading'
 import { Link } from './link'
 import { ClientWrapper } from './wrapper.client'
@@ -53,6 +54,7 @@ const DEFAULT_COMPONENTS = getNextraMDXComponents({
   h5: H5,
   h6: H6,
   hr: props => <hr className="x:my-[2em] nextra-border" {...props} />,
+  input: Checkbox,
   li: props => <li className="x:my-[.5em]" {...props} />,
   ol: props => (
     <ol
