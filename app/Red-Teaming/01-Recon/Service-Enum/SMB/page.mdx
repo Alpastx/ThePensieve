@@ -41,7 +41,8 @@ nxc smb <IP> -u <USER> -p <PASS> --shares --users --groups --pass-pol --loggedon
 
 # Interacting
 smbclient -N -L //<IP>/ -U <user>%<pass>                             # list shares
-smbclient -U '<DOMAIN>\<USER>%<PASS>' //<IP>/<SHARE>
+smbclient -U <user> //<IP>/<SHARE>
+#enter pass
 smbmap -H <IP> -u <USER> -p <PASS> -R <SHARE>       # recursive listing
 smbmap -H <IP> -u <USER> -p <PASS> --download "<SHARE>/<FILE>"
 smbmap -H <IP> -u <USER> -p <PASS> --upload <FILE> "<SHARE>\<FILE>"

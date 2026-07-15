@@ -1,0 +1,20 @@
+## Simple ball knowledge
+
+# defaultcreds-cheat-sheet
+
+theres a pip package called defaultcreds-cheat-sheet that can be used to check for default credentials.
+
+```bash
+#install 
+pip3 install defaultcreds-cheat-sheet
+# use 
+creds search <service>
+#eg,
+creds search smb
+creds search linksys
+```
+
+
+# The histroy of passwords in linux is stored in /etc/security/opasswd 
+
+if we setup PAM to prevent users from reusing old passwds thses passwd are stored in the /etc/security/opasswd file.

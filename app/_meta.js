@@ -27,7 +27,8 @@ const appMeta = {
   },
   CTF: {
     display: 'children',
-  }
+  },
+  'Ball-Knowledge': "Ball-Knowledge",
 }
 
 export default appMeta
