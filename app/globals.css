@@ -1125,6 +1125,137 @@ div:has(> select option[value="light"]) {
   font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif !important;
 }
 
+/* ===== MERMAID ZOOMABLE ===== */
+
+.pensieve-mermaid-zoomable {
+  position: relative;
+  margin: 1.75rem 0;
+  overflow: hidden;
+  border: 1px solid rgba(168, 85, 247, 0.16);
+  border-radius: 0.875rem;
+  background:
+    radial-gradient(
+      ellipse 80% 120% at 50% -25%,
+      rgba(168, 85, 247, 0.14),
+      transparent 58%
+    ),
+    rgba(255, 255, 255, 0.018);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.35),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.pensieve-mermaid-zoomable::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 1.25rem;
+  left: 1.25rem;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(168, 85, 247, 0.45),
+    transparent
+  );
+  pointer-events: none;
+  z-index: 2;
+}
+
+.pensieve-mermaid-zoomable__viewport {
+  width: 100% !important;
+  height: 100% !important;
+  cursor: grab;
+}
+
+.pensieve-mermaid-zoomable__placeholder {
+  width: 100%;
+  height: 100%;
+}
+
+.pensieve-mermaid-zoomable__viewport:active {
+  cursor: grabbing;
+}
+
+.pensieve-mermaid-zoomable__content {
+  width: fit-content !important;
+  height: fit-content !important;
+}
+
+.pensieve-mermaid-zoomable__canvas {
+  display: block;
+  padding: 1.5rem;
+  line-height: 0;
+}
+
+.pensieve-mermaid-zoomable__canvas svg {
+  display: block;
+  max-width: none;
+  height: auto;
+}
+
+.pensieve-mermaid-zoomable__canvas .node rect,
+.pensieve-mermaid-zoomable__canvas .node polygon,
+.pensieve-mermaid-zoomable__canvas .node circle,
+.pensieve-mermaid-zoomable__canvas .node ellipse,
+.pensieve-mermaid-zoomable__canvas .node path {
+  filter: drop-shadow(0 0 10px rgba(168, 85, 247, 0.12));
+}
+
+.pensieve-mermaid-zoomable__canvas .edgePath path,
+.pensieve-mermaid-zoomable__canvas .flowchart-link {
+  filter: drop-shadow(0 0 6px rgba(168, 85, 247, 0.16));
+}
+
+.pensieve-mermaid-zoomable__canvas .edgeLabel,
+.pensieve-mermaid-zoomable__canvas .label {
+  font-family: var(--font-body), ui-sans-serif, system-ui, sans-serif !important;
+}
+
+.pensieve-mermaid-zoomable__controls {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  z-index: 3;
+  display: flex;
+  gap: 0.35rem;
+}
+
+.pensieve-mermaid-zoomable__control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 0.5rem;
+  background: rgba(10, 10, 14, 0.72);
+  color: #ede9fe;
+  font-size: 1rem;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.pensieve-mermaid-zoomable__control:hover {
+  background: rgba(168, 85, 247, 0.28);
+  border-color: rgba(168, 85, 247, 0.65);
+}
+
+.pensieve-mermaid-zoomable__control:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.8);
+  outline-offset: 2px;
+}
+
+html:not(.dark) .pensieve-mermaid-zoomable__control {
+  background: rgba(255, 255, 255, 0.88);
+  color: #3b0764;
+  border-color: rgba(147, 51, 234, 0.28);
+}
+
 /* ===== CHECKBOXES (Task Lists) ===== */
 
 .dark li:has(> input[type="checkbox"]) {

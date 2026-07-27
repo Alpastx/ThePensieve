@@ -14,7 +14,7 @@ import { useMDXComponents as getNextraMDXComponents } from 'nextra/mdx-component
 import type { UseMDXComponents } from 'nextra/mdx-components'
 import { removeLinks } from 'nextra/remove-links'
 import type { FC, HTMLAttributes, ReactNode } from 'react'
-import { ModuleGroup, Quiz, Sidebar } from '../components'
+import { MermaidZoomable, ModuleGroup, Quiz, Sidebar } from '../components'
 import { TOCProvider } from '../stores'
 import { Checkbox } from './checkbox.client'
 import { H1, H2, H3, H4, H5, H6 } from './heading'
@@ -65,6 +65,7 @@ const DEFAULT_COMPONENTS = getNextraMDXComponents({
   p: props => <p className="x:not-first:mt-[1.25em] x:leading-7" {...props} />,
   pre: withIcons(Pre),
   summary: Summary,
+  MermaidZoomable,
   ModuleGroup,
   Quiz,
   table: ({ className, ...props }) => (

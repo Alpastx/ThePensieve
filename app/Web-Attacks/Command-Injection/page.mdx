@@ -447,8 +447,9 @@ $env:HOMEPATH[0]           # \
 
 ## Complete flowchart
 
-```mermaid
-flowchart TD
+<MermaidZoomable
+  height={720}
+  chart={`flowchart TD
     A["Find input that may reach a shell params like<br/>?cmd=,?ping=,?query=,?arg=,etc."] --> A1["Capture the raw request"]
     A1 --> A2{"Reachable in useful<br/>auth state?"}
     A2 -- "No / admin-only" --> A3["Record the lead<br/>return after auth bypass, creds, or role escalation"]
@@ -475,8 +476,8 @@ flowchart TD
     G --> G0["Reduce to one character<br/>operator · space · slash · command word"]
     G0 --> G1{"What is<br/>blocked?"}
     G1 -- "Operator ; &&" --> O1["Newline %0a<br/>fallback: & | %0d · env-var ;"]
-    G1 -- "Space" --> O2["${IFS} · tab %09<br/>fallback: brace {cmd,arg}"]
-    G1 -- "Slash /" --> O3["${PATH:0:1}<br/>fallback: char-shift tr"]
+    G1 -- "Space" --> O2["\${IFS} · tab %09<br/>fallback: brace {cmd,arg}"]
+    G1 -- "Slash /" --> O3["\${PATH:0:1}<br/>fallback: char-shift tr"]
     G1 -- "Command word" --> O4["Quotes w'h'o'am'i<br/>case flip · rev · base64"]
     G1 -- "WAF signature" --> O5["URL-encode · change operator<br/>shorten payload · move to OOB proof"]
     O1 --> RE["Re-send payload"]
@@ -505,8 +506,8 @@ flowchart TD
     class R,BL,BL1,BL2 confirm;
     class G0,O1,O2,O3,O4,O5,RE bypass;
     class EV,RCE,RS,POST win;
-    class A3,C2,REP stop;
-```
+    class A3,C2,REP stop;`}
+/>
 <div className="pensieve-hashtags">
   #OS-Command-Injection #Penetration-Testing #Red-Team #HTB #Linux #Windows #PowerShell #PHP #WebAttacks #RCE #PathTraversal #LogPoisoning #Wrappers #OWASP #Certification
 </div>
