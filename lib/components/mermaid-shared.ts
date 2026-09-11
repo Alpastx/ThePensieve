@@ -14,7 +14,7 @@ export function getMermaidThemeVariables(isDarkTheme: boolean) {
     secondaryColor: isDarkTheme ? "#21102f" : "#f3e8ff",
     secondaryTextColor: isDarkTheme ? "#e9d5ff" : "#3b0764",
     secondaryBorderColor: "#9333ea",
-    tertiaryColor: isDarkTheme ? "#09090b" : "#ffffff",
+    tertiaryColor: isDarkTheme ? "#000000" : "#ffffff",
     tertiaryTextColor: isDarkTheme ? "#ddd6fe" : "#4c1d95",
     tertiaryBorderColor: "rgba(168, 85, 247, 0.45)",
     mainBkg: isDarkTheme ? "#14091f" : "#faf5ff",
@@ -24,7 +24,7 @@ export function getMermaidThemeVariables(isDarkTheme: boolean) {
       ? "rgba(168, 85, 247, 0.06)"
       : "rgba(168, 85, 247, 0.08)",
     clusterBorder: "rgba(168, 85, 247, 0.35)",
-    edgeLabelBackground: isDarkTheme ? "#0a0a0a" : "#ffffff",
+    edgeLabelBackground: isDarkTheme ? "#000000" : "#ffffff",
     lineColor: isDarkTheme ? "#c084fc" : "#7e22ce",
     textColor: isDarkTheme ? "#ede9fe" : "#2e1065",
     fontSize: "15px"

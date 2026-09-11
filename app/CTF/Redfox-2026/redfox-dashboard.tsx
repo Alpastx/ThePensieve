@@ -92,7 +92,7 @@ export function RedfoxDashboard() {
           {members.map((m: Member) => (
             <div
               key={m.user_id}
-              className="rounded-xl border border-white/[0.08] bg-[#0a0a0a] p-4 transition hover:border-violet-500/25"
+              className="rounded-xl border border-white/[0.08] bg-[#000000] p-4 transition hover:border-violet-500/25"
             >
               <h3 className="font-medium text-zinc-100">{m.username}</h3>
               <p className="text-sm text-zinc-500">Score: {m.score}</p>

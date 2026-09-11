@@ -651,7 +651,7 @@ div:has(> select option[value="light"]) {
   margin: 1.5em 0;
   border-radius: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.06);
-  background: #0a0a0a;
+  background: #000000;
   padding: 1.25rem 1.25rem 1.35rem;
 }
 
@@ -981,7 +981,7 @@ div:has(> select option[value="light"]) {
 /* ===== CODE BLOCKS ===== */
 
 .dark pre {
-  background-color: #0a0a0a !important;
+  background-color: #000000 !important;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 0.75rem;
 }
@@ -1229,7 +1229,7 @@ div:has(> select option[value="light"]) {
   height: 2rem;
   border: 1px solid rgba(168, 85, 247, 0.35);
   border-radius: 0.5rem;
-  background: rgba(10, 10, 14, 0.72);
+  background: rgba(0, 0, 0, 0.72);
   color: #ede9fe;
   font-size: 1rem;
   line-height: 1;
