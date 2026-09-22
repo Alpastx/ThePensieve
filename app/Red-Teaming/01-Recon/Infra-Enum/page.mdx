@@ -1,18 +1,18 @@
 ---
 title: Infrastructure Enumeration
-description: Mapping an organization's full internet presence — certificate transparency, DNS, subdomains, cloud resources, and third-party services during recon.
+description: Map an organization's internet presence. Cover certificate transparency, DNS, subdomains, cloud resources, and third-party services.
 ---
 
 # 🌐 Infrastructure Enumeration
 
 > [!TIP]
-> Domain/infrastructure information extends beyond subdomains - it's about mapping the entire Internet presence including certificates, DNS, cloud resources, and third-party services.
+> Domain and infrastructure information is more than subdomains. Map the full internet presence. Include certificates, DNS, cloud resources, and third-party services.
 
 ---
 
 ## Certificate Transparency (crt.sh)
 
-[Certificate Transparency](https://en.wikipedia.org/wiki/Certificate_Transparency) logs enable verification of issued digital certificates. This is a goldmine for subdomain discovery.
+[Certificate Transparency](https://en.wikipedia.org/wiki/Certificate_Transparency) logs let you verify issued digital certificates. These logs are a strong source for subdomain discovery.
 
 | Task | Command |
 |------|---------|
@@ -49,7 +49,7 @@ done
 
 ## 📋 DNS Records
 
-DNS records reveal critical infrastructure details about the target.
+DNS records show important infrastructure details about the target.
 
 ```bash
 dig ANY target.com
@@ -78,7 +78,7 @@ dig ANY target.com
 ## ☁️ Cloud Resources
 
 > [!WARNING]
-> Cloud provider infrastructure security ≠ secure company configurations. Misconfigurations are common!
+> Cloud provider infrastructure security is not the same as a secure company configuration. Misconfigurations are common.
 
 ### Common Cloud Storage
 
@@ -118,9 +118,9 @@ intext:companyname inurl:storage.googleapis.com
 ## 🔍 Additional Reconnaissance
 
 ### Target Website Source Code
-- View source for hardcoded endpoints, API keys, S3 URLs
-- Check JavaScript files for API endpoints
-- Look for development/staging URLs in comments
+- View source for hardcoded endpoints, API keys, and S3 URLs.
+- Check JavaScript files for API endpoints.
+- Look for development and staging URLs in comments.
 
 ```bash
 # Extract URLs from page source

@@ -142,7 +142,7 @@ xss_probe_7531
 ```
 
 - [ ] Stand up a listener (`php -S 0.0.0.0:80` or `nc -lvnp 80`) before sending payloads.
-- [ ] Steal and replay the cookie; if `HttpOnly` blocks it, perform an authenticated action in-browser instead.
+- [ ] Steal and replay the cookie. If `HttpOnly` blocks it, perform an authenticated action in-browser instead.
 - [ ] For reflected XSS, build the crafted URL that carries the payload and validate it end-to-end.
 - [ ] Capture evidence (request, executing `window.origin`, received cookie) for reporting.
 - [ ] Carry stolen sessions/creds forward to authenticated areas and other services.
@@ -174,7 +174,13 @@ xss_probe_7531
 ### Methodology Recovery
 
 <Callout type="info">
-  If nothing executes after exhausting the above: re-check the **context** (you may be encoding for HTML when the sink is a JS string or attribute), try **case/whitespace/encoding** evasions against a filter, confirm there is no **CSP** blocking inline/remote scripts (`Content-Security-Policy` response header), and review client-side JS for a **DOM sink** you can reach directly. Then re-rank inputs and retry the simplest breakout first.
+  If nothing executes after exhausting the above, do this:
+
+  - Re-check the **context**. You may be encoding for HTML when the sink is a JS string or attribute.
+  - Try **case/whitespace/encoding** evasions against a filter.
+  - Confirm there is no **CSP** blocking inline/remote scripts (`Content-Security-Policy` response header).
+  - Review client-side JS for a **DOM sink** you can reach directly.
+  - Then re-rank inputs and retry the simplest breakout first.
 </Callout>
 
 
@@ -183,7 +189,7 @@ xss_probe_7531
 - **Source** are the JavaScript object that takes input (e.g. `document.URL`, a `task=` URL parameter, an input field).
 - **Sink** are the functions that writes that input into the DOM. If it writes raw, unsanitized input, it is exploitable.
 
-Dangerous sinks: `document.write()`, `element.innerHTML`, `element.outerHTML`; jQuery `add()`, `after()`, `append()`, `html()`. Example vulnerable flow: input from the URL written straight into the page:
+Dangerous sinks: `document.write()`, `element.innerHTML`, `element.outerHTML`. JQuery `add()`, `after()`, `append()`, `html()`. Example vulnerable flow: input from the URL written straight into the page:
 
 ```javascript
 var pos = document.URL.indexOf("task=");
@@ -200,7 +206,7 @@ document.getElementById("todo").innerHTML = "<b>Next Task:</b> " + decodeURIComp
 ### Discovery Approaches
 
 - **Automated** scanners (Burp Pro, ZAP, Nessus) and open-source tools ([XSStrike](https://github.com/s0md3v/XSStrike), [BruteXSS](https://github.com/rajeshmajumdar/BruteXSS), [XSSer](https://github.com/epsylon/xsser)) inject payloads and diff the response. Fast but false-positive-prone always verify a reported hit manually.
-- **Manual payload testing** work lists like [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/XSS%20Injection/README.md) and [payload-box/xss-payload-list](https://github.com/payload-box/xss-payload-list). Most payloads target a specific context, so failures are expected; pick payloads that match your injection context.
+- **Manual payload testing** work lists like [PayloadsAllTheThings](https://github.com/swisskyrepo/PayloadsAllTheThings/blob/master/XSS%20Injection/README.md) and [payload-box/xss-payload-list](https://github.com/payload-box/xss-payload-list). Most payloads target a specific context, so failures are expected. Pick payloads that match your injection context.
 - **Code review** the most reliable method. Tracing input from Source to Sink (front and back end) lets you craft a high-confidence payload and find bugs scanners miss.
 
 <Callout type="info">
@@ -213,25 +219,25 @@ Map to MITRE ATT&CK **T1059.007 (JavaScript)** and the OWASP A03:2021 Injection 
 <Quiz
   question="A stored XSS fires, but document.cookie returns an empty string even though you are logged in. What is the most likely cause and best next move?"
   options={[
-    "The payload failed; switch to a <script> tag",
+    "The payload failed. Switch to a <script> tag",
     "The session cookie is HttpOnly, so perform an authenticated action in-browser instead of stealing the cookie",
-    "The browser cleared cookies; just refresh and retry",
-    "XSS cannot read cookies at all; abandon this path"
+    "The browser cleared cookies. Just refresh and retry",
+    "XSS cannot read cookies at all. Abandon this path"
   ]}
   answer={1}
-  explanation="An empty document.cookie despite a valid session points to the HttpOnly flag, which hides cookies from JavaScript. Cookie theft is dead, but the payload still runs in the victim's session pivot to making privileged requests (change email, create admin, CSRF-style actions) directly from the injected JS. Switching to <script> does nothing since code already executed, and XSS can read non-HttpOnly cookies fine."
+  explanation="An empty document.cookie despite a valid session points to the HttpOnly flag, which hides cookies from JavaScript. Cookie theft is dead, but the payload still runs in the victim's session. Pivot to making privileged requests (change email, create admin, CSRF-style actions) directly from the injected JS. Switching to <script> does nothing since code already executed. XSS can read non-HttpOnly cookies fine."
 />
 
 <Quiz
   question="You injected your marker and it comes back as &lt;b&gt;test&lt;/b&gt; in the response. What does this tell you?"
   options={[
     "The app is definitely not vulnerable to any XSS",
-    "Output encoding is applied here; this context is likely safe, but check other inputs, contexts, and DOM sinks",
+    "Output encoding is applied here. This context is likely safe, but check other inputs, contexts, and DOM sinks",
     "You must immediately try 3000 payloads from a wordlist",
     "The server is down"
   ]}
   answer={1}
-  explanation="HTML-entity encoding on output is the correct defense for the HTML body context, so a naive payload won't fire here. That does not mean the whole app is safe other inputs, other contexts (attribute, JS string, URL), or a client-side DOM sink may still be exploitable. Blindly firing thousands of payloads at an encoded sink wastes time; reason about context first."
+  explanation="HTML-entity encoding on output is the correct defense for the HTML body context, so a naive payload will not fire here. That does not mean the whole app is safe. Other inputs, other contexts (attribute, JS string, URL), or a client-side DOM sink may still be exploitable. Blindly firing thousands of payloads at an encoded sink wastes time. Reason about context first."
 />
 
 <div className="pensieve-hashtags">

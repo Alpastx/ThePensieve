@@ -96,8 +96,8 @@ dig CH TXT version.server @<IP>
 ```
 
 - [ ] `nmap -sV -sC -p53 <IP>` detect server software and version.
-- [ ] `nmap -sU -sV -p53 <IP>` confirm UDP 53 is open. Standard queries use UDP; TCP is reserved for zone transfers and oversized responses. A TCP-only DNS server is unusual and worth noting.
-- [ ] `dig CH TXT version.bind @<IP>` extract BIND version via the CHAOS class; `version.server` covers PowerDNS/Knot/NSD. Many admins forget to disable this, and the version maps directly to known CVEs.
+- [ ] `nmap -sU -sV -p53 <IP>` confirm UDP 53 is open. Standard queries use UDP. TCP is reserved for zone transfers and oversized responses. A TCP-only DNS server is unusual and worth noting.
+- [ ] `dig CH TXT version.bind @<IP>` extract BIND version via the CHAOS class. `version.server` covers PowerDNS/Knot/NSD. Many admins forget to disable this, and the version maps directly to known CVEs.
 - [ ] `searchsploit <server>` and Google `<server> <version> exploit` BIND has a long history of remote DoS and occasional RCE bugs.
 - [ ] If the target is a domain controller, AD-integrated DNS leaks the entire domain layout via SRV records jump to Phase 5 immediately.
 
@@ -131,8 +131,8 @@ done
 dig ixfr=<SERIAL> <DOMAIN> @<IP>
 ```
 
-- [ ] `dig axfr <DOMAIN> @<IP>` attempt the transfer on the primary. A misconfigured `allow-transfer` dumps the entire zone — the most valuable artifact in DNS recon.
-- [ ] `dig axfr <DOMAIN> @<NS_SERVER>` against each NS record. Zone transfer ACLs are per-server; secondaries are frequently misconfigured even when the primary is locked down.
+- [ ] `dig axfr <DOMAIN> @<IP>` attempt the transfer on the primary. A misconfigured `allow-transfer` dumps the entire zone. That dump is the most valuable artifact in DNS recon.
+- [ ] `dig axfr <DOMAIN> @<NS_SERVER>` against each NS record. Zone transfer ACLs are per-server. Secondaries are frequently misconfigured even when the primary is locked down.
 - [ ] Try common internal zone names with the loop above `internal`, `dev`, `staging`, `admin`, `test`, `corp`, `dmz`.
 - [ ] `dig ixfr=<SERIAL> <DOMAIN> @<IP>` incremental transfer may leak recent changes when servers protect AXFR but forget IXFR.
 - [ ] On success: save the output, extract every hostname and IP, and prioritize internal-only names (`internal.*`, `dev.*`, `db.*`, `dc.*`, `vpn.*`). This is your network map.
@@ -162,11 +162,11 @@ dig -x <IP> @<IP>
 for i in $(seq 1 254); do dig -x <SUBNET>.$i @<IP> +short; done | grep -v "^$"
 ```
 
-- [ ] `dig ns <DOMAIN> @<IP>` list nameservers; try AXFR against each.
-- [ ] `dig mx <DOMAIN> @<IP>` mail servers; feed into SMTP enumeration → SMTP-25,587,465.
-- [ ] `dig txt <DOMAIN> @<IP>` SPF/DKIM/DMARC and verification tokens; occasionally leak API keys or internal hostnames.
+- [ ] `dig ns <DOMAIN> @<IP>` list nameservers. Try AXFR against each.
+- [ ] `dig mx <DOMAIN> @<IP>` mail servers. Feed into SMTP enumeration → SMTP-25,587,465.
+- [ ] `dig txt <DOMAIN> @<IP>` SPF/DKIM/DMARC and verification tokens. Occasionally leak API keys or internal hostnames.
 - [ ] `dig soa <DOMAIN> @<IP>` the `RNAME` field is the zone admin email with `.` replacing the first `@` (so `admin.example.com` = `admin@example.com`). Add this username to every spray list.
-- [ ] `dig aaaa <DOMAIN> @<IP>` and `dig -x <IP> @<IP>` IPv6 records are often unfiltered; reverse sweeps reveal infrastructure hosts missing from the forward zone.
+- [ ] `dig aaaa <DOMAIN> @<IP>` and `dig -x <IP> @<IP>` IPv6 records are often unfiltered. Reverse sweeps reveal infrastructure hosts missing from the forward zone.
 
 ### Phase 4: Subdomain Enumeration
 
@@ -197,7 +197,7 @@ fierce --domain <DOMAIN> --dns-servers <IP>
 - [ ] Add every discovered subdomain to `/etc/hosts`. Vhost-based sites serve different content per `Host` header, so IP scans alone miss them.
 
 <Callout type="info">
-When picking a first target among discovered hosts, CI/CD and dev infrastructure (`jenkins.`, `gitlab.`, `dev.`, `staging.`) usually win they run weaker security, expose default consoles, and frequently leak source code or hardcoded credentials. The lowest-security host is the fastest foothold.
+When picking a first target among discovered hosts, CI/CD and dev infrastructure (`jenkins.`, `gitlab.`, `dev.`, `staging.`) usually win. They run weaker security, expose default consoles, and frequently leak source code or hardcoded credentials. The lowest-security host is the fastest foothold.
 </Callout>
 
 ### Phase 5: Active Directory DNS Enumeration
@@ -223,7 +223,7 @@ for srv in _ldap._tcp _kerberos._tcp _gc._tcp _kpasswd._tcp _ldap._tcp.dc._msdcs
 done
 ```
 
-- [ ] `dig srv _ldap._tcp.dc._msdcs.<DOMAIN> @<IP>` find domain controllers; every AD-joined client uses this query to locate a DC.
+- [ ] `dig srv _ldap._tcp.dc._msdcs.<DOMAIN> @<IP>` find domain controllers. Every AD-joined client uses this query to locate a DC.
 - [ ] `dig srv _kerberos._tcp.<DOMAIN> @<IP>` find KDCs (usually the same hosts as the DCs).
 - [ ] `dig srv _gc._tcp.<DOMAIN> @<IP>` Global Catalog servers expose forest-wide LDAP on port 3268.
 - [ ] `dig srv _kpasswd._tcp.<DOMAIN>` and `_sip._tcp.<DOMAIN>` password-change servers and VoIP systems (often underprotected, sometimes sharing AD creds).
@@ -254,9 +254,9 @@ dig +dnssec <DOMAIN> @<IP>
 ```
 
 - [ ] `dig google.com @<IP>` if the server resolves external domains for you, it is an open resolver, exploitable for amplification, poisoning, and tunneling egress.
-- [ ] `dig +norecurse <DOMAIN> @<IP>` a cached answer means the domain was queried recently by someone on the network; `nmap --script dns-cache-snoop` automates this across a list.
+- [ ] `dig +norecurse <DOMAIN> @<IP>` a cached answer means the domain was queried recently by someone on the network. `nmap --script dns-cache-snoop` automates this across a list.
 - [ ] Use cache contents to fingerprint internal services and SaaS apps for targeted phishing or credential-reuse hunting.
-- [ ] `dig +dnssec <DOMAIN> @<IP>` absent DNSSEC makes cache poisoning theoretically viable on a vulnerable resolver; document it.
+- [ ] `dig +dnssec <DOMAIN> @<IP>` absent DNSSEC makes cache poisoning theoretically viable on a vulnerable resolver. Document it.
 
 **Move to Phase 7** to formalize the remaining misconfiguration findings for the report.
 
@@ -285,8 +285,8 @@ nmap -p53 <IP>
 ```
 
 - [ ] `nmap --script dns-recursion -p53 <IP>` / `dig google.com @<IP>` confirm open-resolver status for the report and for potential tunneling.
-- [ ] `dig _dmarc.<DOMAIN> txt @<IP>` and `dig txt` no SPF/DMARC means email spoofing is possible; high-impact in social-engineering scope.
-- [ ] Check whether TCP 53 is reachable if only UDP is exposed, zone transfers are blocked at the firewall regardless of server config, so a failed AXFR earlier may be a network control rather than a hardened ACL.
+- [ ] `dig _dmarc.<DOMAIN> txt @<IP>` and `dig txt` no SPF/DMARC means email spoofing is possible. High-impact in social-engineering scope.
+- [ ] Check whether TCP 53 is reachable. If only UDP is exposed, zone transfers are blocked at the firewall regardless of server config. A failed AXFR earlier may be a network control rather than a hardened ACL.
 - [ ] Document version disclosure, open recursion, missing DNSSEC, and spoofable mail as discrete findings with evidence.
 
 <Quiz
@@ -298,12 +298,12 @@ nmap -p53 <IP>
     "Try the same AXFR query over UDP instead of TCP"
   ]}
   answer={1}
-  explanation="Zone transfer ACLs are configured per-server, not per-zone. The primary is usually locked down, but secondaries — especially ones added years ago and forgotten often allow transfers from anywhere. Always enumerate every NS record and try AXFR against each. IXFR is worth a follow-up but is not a guaranteed bypass; the same allow-transfer ACL typically governs both. AXFR requires TCP by spec, so UDP is not an option."
+  explanation="Zone transfer ACLs are configured per-server, not per-zone. The primary is usually locked down, but secondaries, especially ones added years ago and forgotten, often allow transfers from anywhere. Always enumerate every NS record and try AXFR against each. IXFR is worth a follow-up but is not a guaranteed bypass. The same allow-transfer ACL typically governs both. AXFR requires TCP by spec, so UDP is not an option."
 />
 
 ## Overview
 
-DNS resolves domain names to IP addresses through a distributed hierarchical system. It is the foundation of every network and the most fundamental protocol for recon both because it is almost always exposed and because it leaks more about a target's internal structure than any other service.
+DNS resolves domain names to IP addresses through a distributed hierarchical system. It is the foundation of every network. It is a fundamental protocol for recon because it is almost always exposed. It also leaks more about a target's internal structure than any other service.
 ### Server Types
 
 | Type | Description | Pentest Relevance |
@@ -414,7 +414,7 @@ nslookup -type=srv _ldap._tcp.dc._msdcs.<DOMAIN> <IP>
 
 ## Zone Transfers (AXFR)
 
-Zone transfers replicate an entire DNS zone between servers. They exist so secondary nameservers can sync from a primary, but if `allow-transfer` is misconfigured to allow any IP, you receive a complete dump of every record in the zone — hostnames, IPs, mail servers, SRV records, TXT comments. It is the single most valuable misconfiguration in DNS.
+Zone transfers replicate an entire DNS zone between servers. They exist so secondary nameservers can sync from a primary. If `allow-transfer` is misconfigured to allow any IP, you receive a complete dump of every record in the zone. That dump includes hostnames, IPs, mail servers, SRV records, and TXT comments. It is the most valuable misconfiguration in DNS.
 
 ```bash
 # Attempt zone transfer
@@ -482,7 +482,7 @@ cat subs.txt | dnsx -resp
 fierce --domain <DOMAIN> --dns-servers <IP>
 ```
 
-`fierce` is older but still valuable — it expands brute force results with reverse lookups on adjacent IPs, often catching hosts the wordlist missed.
+`fierce` is older but still valuable. It expands brute force results with reverse lookups on adjacent IPs, often catching hosts the wordlist missed.
 
 ### Reverse Lookup Sweep
 
@@ -494,7 +494,7 @@ for i in $(seq 1 254); do
 done | tee reverse_lookups.txt
 ```
 
-Reverse lookup sweeps reveal hosts that are not in the forward zone but still have PTR records — typically infrastructure devices, monitoring systems, and forgotten servers.
+Reverse lookup sweeps reveal hosts that are not in the forward zone but still have PTR records. Those hosts are typically infrastructure devices, monitoring systems, and forgotten servers.
 
 ### Recommended Wordlists
 
@@ -530,7 +530,7 @@ nmap --script "dns-*" -p53 <IP>
 
 ### Subdomain Takeover
 
-If a CNAME record points to an external service (AWS S3, GitHub Pages, Heroku, Azure) and that service is no longer claimed, you can register the dangling resource to control the subdomain. Anyone visiting `subdomain.target.com` then lands on your content — perfect for phishing and bypass of CSP/CORS restrictions tied to the parent domain.
+If a CNAME record points to an external service (AWS S3, GitHub Pages, Heroku, Azure) and that service is no longer claimed, you can register the dangling resource. You then control the subdomain. Anyone visiting `subdomain.target.com` then lands on your content. That is useful for phishing and for bypass of CSP/CORS restrictions tied to the parent domain.
 
 ```bash
 # Find dangling CNAMEs
@@ -592,12 +592,12 @@ dc01         IN     A       10.10.1.2
 ## Common Mistakes
 
 <Callout type="error">
-  - **Only attacking the primary nameserver** AXFR ACLs are per-server; the forgotten secondary is usually the one that allows the transfer. Always enumerate NS records and try each.
-  - **Forgetting UDP** `nmap -sU -p53` matters; a server answering only TCP (or only UDP) changes whether AXFR is even possible.
+  - **Only attacking the primary nameserver** AXFR ACLs are per-server. The forgotten secondary is usually the one that allows the transfer. Always enumerate NS records and try each.
+  - **Forgetting UDP** `nmap -sU -p53` matters. A server answering only TCP (or only UDP) changes whether AXFR is even possible.
   - **Ignoring the SOA admin email** the `RNAME` field is a free, often-privileged username for spraying. Add it to every list.
   - **Not adding discovered hosts to `/etc/hosts`** vhost-based sites only respond to the correct `Host` header, so IP-only scans miss them entirely.
-  - **Looping noisy AXFR/brute force from one IP** zone transfers and large brute runs are logged and alerted; pace them and prefer one attempt per NS.
-  - **Skipping SRV records on a DC** AD-integrated DNS hands you the entire domain topology with zero credentials; never enumerate AD by hand when SRV records exist.
+  - **Looping noisy AXFR/brute force from one IP** zone transfers and large brute runs are logged and alerted. Pace them and prefer one attempt per NS.
+  - **Skipping SRV records on a DC** AD-integrated DNS hands you the entire domain topology with zero credentials. Never enumerate AD by hand when SRV records exist.
 </Callout>
 
 <Quiz
@@ -609,7 +609,7 @@ dc01         IN     A       10.10.1.2
     "Spray default credentials against vpn VPN access pivots straight inside"
   ]}
   answer={2}
-  explanation="Without credentials, the highest-EV target is the one most likely to give you a foothold fastest. Jenkins and GitLab routinely ship default consoles, anonymous read access, and repos full of hardcoded secrets the textbook easy first foothold. DCs are the eventual goal but yield nothing without at least one credential. Full Nmap scans are valuable but slower; run them in parallel while poking the high-EV web targets. VPNs rarely accept default creds in modern environments."
+  explanation="Without credentials, the highest-EV target is the one most likely to give you a foothold fastest. Jenkins and GitLab routinely ship default consoles, anonymous read access, and repos full of hardcoded secrets the textbook easy first foothold. DCs are the eventual goal but yield nothing without at least one credential. Full Nmap scans are valuable but slower. Run them in parallel while poking the high-EV web targets. VPNs rarely accept default creds in modern environments."
 />
 
 <div className="flex flex-wrap gap-2 mb-4">

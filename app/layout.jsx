@@ -1,5 +1,4 @@
 import { Layout, Navbar } from '../lib'
-import { Head } from 'nextra/components'
 import { getPageMap } from 'nextra/page-map'
 import { Instrument_Serif, Space_Grotesk } from 'next/font/google'
 import Script from 'next/script'
@@ -91,6 +90,11 @@ export const metadata = {
   },
 }
 
+export const viewport = {
+  colorScheme: 'dark',
+  themeColor: '#000000',
+}
+
 const navbar = (
   <Navbar
     logo={
@@ -170,8 +174,7 @@ export default async function RootLayout({ children }) {
       className={`dark ${instrumentSerif.variable} ${spaceGrotesk.variable}`}
       suppressHydrationWarning
     >
-      <Head />
-      <body>
+      <body suppressHydrationWarning>
         <Script
           id="ld-json"
           type="application/ld+json"

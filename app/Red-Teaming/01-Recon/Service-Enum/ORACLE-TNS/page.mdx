@@ -1,9 +1,9 @@
 ---
 title: Oracle TNS - Port 1521
-description: Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation.
+description: "Enumerate and attack Oracle TNS on port 1521. Cover listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
 openGraph:
   title: "Oracle TNS - Port 1521"
-  description: "Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
+  description: "Enumerate and attack Oracle TNS on port 1521. Cover listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
   images:
     - url: /imgs/oracle.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "Oracle TNS - Port 1521"
-  description: "Enumeration and attack methodology for Oracle TNS on port 1521, covering listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
+  description: "Enumerate and attack Oracle TNS on port 1521. Cover listener fingerprinting, SID discovery, default credentials, ODAT modules, file operations, command execution, and database privilege escalation."
   images:
     - url: /imgs/oracle.jpg
       width: 1672
@@ -69,7 +69,7 @@ SELECT name, password, spare4 FROM sys.user$;
   **Ask yourself**
 
   - What exact Oracle major version and patchlevel is the TNS listener reporting?
-  - Does the version dictate SID vs service name (11g uses SIDs; 12c+ multitenant uses service names)?
+  - Does the version dictate SID vs service name (11g uses SIDs. 12c+ multitenant uses service names)?
   - Which hashing scheme is in play (11g DES+SHA1 vs 12c+ PBKDF2) and how crackable will dumped hashes be?
   - Is this a pre-10g listener that can be manipulated without any credentials?
 </Callout>
@@ -84,7 +84,7 @@ searchsploit oracle tns
 ```
 
 - [ ] `nmap -sV -sC -p1521 <IP>` identifies the TNS listener and usually returns the exact Oracle version in the banner.
-- [ ] Note the major version, because it dictates which attacks are viable: pre-2007 8i/9i/10g listeners were unauthenticated (`tnscmd10g` can `stop`/`status`/`set log_file` remotely); 11g stores DES + SHA1 hashes in `sys.user$` (crack in seconds, `-m 3100`/`-m 112`); 12c+ introduces pluggable databases (service names) and PBKDF2 hashing in `spare4` (much harder to crack); 18c/19c/21c share the 12c architecture, with 19c the most common production LTS.
+- [ ] Note the major version, because it dictates which attacks are viable: pre-2007 8i/9i/10g listeners were unauthenticated (`tnscmd10g` can `stop`/`status`/`set log_file` remotely). 11g stores DES + SHA1 hashes in `sys.user$` (crack in seconds, `-m 3100`/`-m 112`). 12c+ introduces pluggable databases (service names) and PBKDF2 hashing in `spare4` (much harder to crack). 18c/19c/21c share the 12c architecture, with 19c the most common production LTS.
 - [ ] `searchsploit oracle <version>` and `searchsploit oracle tns` several pre-auth listener exploits still exist for older versions.
 
 
@@ -106,8 +106,8 @@ nmap -p1521 --script oracle-sid-brute <IP>
 hydra -L /usr/share/metasploit-framework/data/wordlists/sid.txt -s 1521 <IP> oracle-sid
 ```
 
-- [ ] `odat sidguesser -s <IP> -p 1521` ODAT's SID brute-forcer is the best tool; comprehensive built-in list, clean retries.
-- [ ] `nmap -p1521 --script oracle-sid-brute <IP>` slower second opinion; `hydra ... oracle-sid` as a fallback when ODAT isn't available.
+- [ ] `odat sidguesser -s <IP> -p 1521` ODAT's SID brute-forcer is the best tool. Comprehensive built-in list, clean retries.
+- [ ] `nmap -p1521 --script oracle-sid-brute <IP>` slower second opinion. `hydra ... oracle-sid` as a fallback when ODAT isn't available.
 - [ ] Manually test the usual suspects: `XE`, `ORCL`, `ORCLCDB`, `ORCLPDB1`, `PROD`, `PRD`, `DEV`, `DEVEL`, `TEST`, `UAT`, `DB`, `SALES`, `HR`, `FINANCE`. On 12c+ always try the default container `ORCLCDB` and pluggable DB `ORCLPDB1`.
 - [ ] Treat the result as topology intel `PROD` and `UAT` side-by-side means multiple independent databases, each its own target. Plan credential attempts per-SID.
 
@@ -196,7 +196,7 @@ SELECT * FROM dba_sys_privs WHERE grantee = USER;
 - [ ] Check for CVEs against the exact patchlevel from Phase 1 unpatched DBs accumulate privesc bugs from Oracle's quarterly Critical Patch Updates.
 
 <Callout type="info">
-SYSDBA is not a role; it is a special authentication mode that bypasses the authorization layer entirely. Connecting `as sysdba` maps you to the `SYS` schema with full filesystem-level authority which is why it lets you read `sys.user$` (normally restricted), use `UTL_FILE` without directory grants, and drop Java classes into the database. Treat SYSDBA as root on the database server.
+SYSDBA is not a role. It is a special authentication mode that bypasses the authorization layer entirely. Connecting `as sysdba` maps you to the `SYS` schema with full filesystem-level authority. That is why it lets you read `sys.user$` (normally restricted), use `UTL_FILE` without directory grants, and drop Java classes into the database. Treat SYSDBA as root on the database server.
 </Callout>
 
 ### Phase 6: Hash Extraction (Requires SYSDBA)
@@ -226,9 +226,9 @@ hashcat -m 112 hashes_11g_sha1.txt /usr/share/wordlists/rockyou.txt
 hashcat -m 12300 hashes_12c.txt ./targeted.txt --rules-file best64.rule
 ```
 
-- [ ] `SELECT name, password, spare4 FROM sys.user$;` `password` is the legacy 11g-and-earlier DES hash (crack in seconds, `-m 3100`); `spare4` holds modern hashes `S:` salted SHA-1 on 11g (`-m 112`), `H:`/`T:` PBKDF2 and SHA-512 on 12c+ (`-m 12300`+). Or use `odat passwordstealer ... --sysdba`.
+- [ ] `SELECT name, password, spare4 FROM sys.user$;` `password` is the legacy 11g-and-earlier DES hash (crack in seconds, `-m 3100`). `spare4` holds modern hashes `S:` salted SHA-1 on 11g (`-m 112`), `H:`/`T:` PBKDF2 and SHA-512 on 12c+ (`-m 12300`+). Or use `odat passwordstealer ... --sysdba`.
 - [ ] Save both columns older accounts may only be crackable via the legacy `password` value.
-- [ ] Crack offline with the matching mode (see phase cheatsheet). 12c+ PBKDF2 is slow; prefer a targeted wordlist + rules over rockyou.
+- [ ] Crack offline with the matching mode (see phase cheatsheet). 12c+ PBKDF2 is slow. Prefer a targeted wordlist + rules over rockyou.
 - [ ] Spray every cracked password against SSH, SMB, WinRM, RDP, and domain auth Oracle DBAs routinely reuse DB passwords on their OS accounts.
 
 ### Phase 7: File Operations and RCE
@@ -271,12 +271,12 @@ odat dbmsscheduler -s <IP> -d <SID> -U <USER> -P <PASS> --exec "cmd.exe /c whoam
     "Use odat dbmsscheduler to schedule a job that calls the oracle user's crontab and gets code execution next minute"
   ]}
   answer={2}
-  explanation="UTL_FILE (A) still obeys Unix permissions it writes as oracle and cannot write to a tomcat:tomcat-owned directory, so the write fails. Cracking shadow (B) is slow and unreliable; Tomcat's service account usually has a random password not in rockyou. Waiting for cron (D) is pointless when immediate execution is available. The Java stored procedure (C) is correct: odat java --exec runs commands directly as oracle with no filesystem write, returns output over the existing connection, and fires a reverse shell in one call. Handle privilege escalation from the oracle shell separately."
+  explanation="UTL_FILE (A) still obeys Unix permissions. It writes as oracle and cannot write to a tomcat:tomcat-owned directory, so the write fails. Cracking shadow (B) is slow and unreliable. Tomcat's service account usually has a random password not in rockyou. Waiting for cron (D) is pointless when immediate execution is available. The Java stored procedure (C) is correct: odat java --exec runs commands directly as oracle with no filesystem write, returns output over the existing connection, and fires a reverse shell in one call. Handle privilege escalation from the oracle shell separately."
 />
 
 ## Overview
 
-Oracle Database uses the TNS (Transparent Network Substrate) protocol for client-server communication. It is the dominant enterprise RDBMS heavily present in government, finance, telco, and healthcare — and routinely found unpatched on internal networks because upgrades are expensive and risky.
+Oracle Database uses the TNS (Transparent Network Substrate) protocol for client-server communication. It is the dominant enterprise RDBMS. It is heavily present in government, finance, telco, and healthcare. It is routinely found unpatched on internal networks because upgrades are expensive and risky.
 
 | Detail | Value |
 |--------|-------|
@@ -289,7 +289,7 @@ Oracle Database uses the TNS (Transparent Network Substrate) protocol for client
 | Identifier | SID (11g and earlier) or service name (12c+ multitenant) |
 
 <Callout type="info">
-Oracle requires tooling not included in standard Kali installs. Install **Oracle Instant Client** (for `sqlplus`) and **ODAT** (for automated exploitation) before the exam both are finicky to set up and you do not want to troubleshoot library paths on exam day. See Environment Setup below.
+Oracle requires tooling not included in standard Kali installs. Install **Oracle Instant Client** (for `sqlplus`) and **ODAT** (for automated exploitation) before the exam. Both are finicky to set up and you do not want to troubleshoot library paths on exam day. See Environment Setup below.
 </Callout>
 
 ## Quick Reference
@@ -389,7 +389,7 @@ ODAT depends on `cx_Oracle` (or `oracledb` on newer versions), which needs the I
 | `apex_public_user` | `apex` | Oracle APEX default |
 
 <Callout type="default">
-`scott:tiger` dates back to the first version of Oracle in 1979 and is still found on production systems because sample schemas ship enabled by default and application teams forget to disable them. Always try it costs nothing, wins flags.
+`scott:tiger` dates back to the first version of Oracle in 1979. It is still found on production systems because sample schemas ship enabled by default and application teams forget to disable them. Always try it. It costs nothing and can win flags.
 </Callout>
 
 ## Dangerous Settings

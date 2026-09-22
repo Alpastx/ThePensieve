@@ -166,8 +166,8 @@ flowchart TD
 127.0.0.1$(id)           # interpolation-friendly context (sub-shell)
 ```
 
-- [ ] Determine the quoting context around your input; pick the matching breakout (see *Injection Context Matrix*).
-- [ ] Fingerprint the OS/shell to choose operators (`;`/`&&` vs `&`; `$()` is Linux-only).
+- [ ] Determine the quoting context around your input. Pick the matching breakout (see *Injection Context Matrix*).
+- [ ] Fingerprint the OS/shell to choose operators (`;`/`&&` vs `&`. `$()` is Linux-only).
 - [ ] Pick a single benign, high-signal marker command (`id`/`whoami`) ot a destructive one.
 
 ```mermaid
@@ -230,7 +230,7 @@ rg -n "\$_(GET|POST|REQUEST|COOKIE)|req\.(query|body|params)|request\.(args|form
 
 - [ ] Inventory sinks and request-reachable sources separately, then connect one full path.
 - [ ] Note every transform in between (blacklist, escape function, regex) and whether your context defeats it.
-- [ ] Flag string concatenation into the command as the smoking gun; argument arrays without a shell are usually safe.
+- [ ] Flag string concatenation into the command as the smoking gun. Argument arrays without a shell are usually safe.
 - [ ] Record whether the sink is reachable unauthenticated that sets the headline chain.
 
 ### Phase 4: Confirm Injection & phase 5
@@ -300,10 +300,10 @@ class C,D,E,B success;
   - Did a request actually reach my listener the only execution proof available here?
 </Callout>
 
-- [ ] Send a `sleep N` payload and measure response time; a consistent ~N-second delay proves blind execution.
+- [ ] Send a `sleep N` payload and measure response time. A consistent ~N-second delay proves blind execution.
 - [ ] Start a listener and trigger a DNS/HTTP/ICMP callback to confirm code runs and egress works.
 - [ ] Exfiltrate output by embedding `$(cmd)` (base64-encode to keep it URL-safe) into the callback URL/hostname.
-- [ ] On a callback, record the working payload and channel; move to weaponization.
+- [ ] On a callback, record the working payload and channel. Move to weaponization.
 
 ### Phase 6: Bypass Filters and Weaponize
 
@@ -345,7 +345,7 @@ flowchart TD
 
 - [ ] Identify the filter layer and enumerate exactly what is blocked (from Phase 4).
 - [ ] Rebuild blocked characters (`${IFS}`, `{a,b}`, `${PATH:0:1}`) and obfuscate blocked words (quotes, case, `rev`, base64).
-- [ ] Prove impact with `id`/`whoami`, then upgrade to a reverse shell; stabilize per [Reverse Shells & Upgrades](/RAW/shell).
+- [ ] Prove impact with `id`/`whoami`, then upgrade to a reverse shell. Stabilize per [Reverse Shells & Upgrades](/RAW/shell).
 - [ ] Capture evidence (request, payload, output) and carry the shell into host post-exploitation.
 
 ## Reference
@@ -355,7 +355,7 @@ flowchart TD
 | Operator | Char | URL-encoded | Runs | Notes |
 |----------|------|-------------|------|-------|
 | Semicolon | `;` | `%3b` | Both | Not valid in Windows CMD (works in PowerShell) |
-| Newline | `\n` | `%0a` | Both | Works Linux + Windows; rarely blacklisted (apps need it) |
+| Newline | `\n` | `%0a` | Both | Works Linux + Windows. Rarely blacklisted (apps need it) |
 | Background | `&` | `%26` | Both | Second output often shown first |
 | Pipe | `\|` | `%7c` | Both | Only the second command's output is shown |
 | AND | `&&` | `%26%26` | Both | Second runs only if first succeeds |
@@ -406,7 +406,7 @@ $env:HOMEPATH[0]           # \
 |-----------|-------|---------|------|
 | Quote insertion | `w'h'o'am'i` / `w"h"o"am"i` | `w"h"o"am"i` | Even count, don't mix quote types |
 | Char insertion | `who$@ami` / `w\ho\am\i` | `who^ami` (caret, CMD) | Linux `\`/`$@` count can be odd |
-| Case flip | `$(tr "[A-Z]" "[a-z]"<<<"WhOaMi")` | `WhOaMi` (case-insensitive) | Linux is case-sensitive; needs a converter |
+| Case flip | `$(tr "[A-Z]" "[a-z]"<<<"WhOaMi")` | `WhOaMi` (case-insensitive) | Linux is case-sensitive. Needs a converter |
 | Reversal | `$(rev<<<'imaohw')` | `iex "$('imaohw'[-1..-20] -join '')"` | Reverse filtered chars too |
 | Encoding | `bash<<<$(base64 -d<<<...)` | `iex "$([Convert]...)"` | `<<<` avoids the `\|` pipe |
 
@@ -424,7 +424,7 @@ $env:HOMEPATH[0]           # \
     "Switch to SQL injection operators"
   ]}
   answer={1}
-  explanation="A newline (%0a) passing while ;/&& are blocked means the operator blacklist has a gap and %0a is your working separator. The methodical move is to keep reducing one character at a time next confirm whether space and the command word are filtered then layer the matching bypasses. Firing a massive obfuscated payload blindly ignores the field length limit and the specific filters you haven't mapped yet."
+  explanation="A newline (%0a) passing while ;/&& are blocked means the operator blacklist has a gap and %0a is your working separator. The methodical move is to keep reducing one character at a time. Next confirm whether space and the command word are filtered. Then layer the matching bypasses. Firing a massive obfuscated payload blindly ignores the field length limit and the specific filters you have not mapped yet."
 />
 
 <Quiz

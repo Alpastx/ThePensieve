@@ -1,6 +1,6 @@
 ---
 title: Nmap - Network Enumeration
-description: Comprehensive Nmap methodology for host discovery, port scanning, service detection, and firewall evasion.
+description: Nmap method for host discovery, port scanning, service detection, and firewall evasion.
 ---
 
 import { Callout } from 'nextra/components'
@@ -10,43 +10,43 @@ import { Callout } from 'nextra/components'
 ## Cheatsheet
 
 ```bash
-# entire range scan 
+# Scan the full range
 rustscan -a 192.168.1.0/24
 
-# simply use this and forget 
+# Default scan with OS and service detection
 sudo rustscan -a 192.168.1.7 -- -A -oA results
 
 # Full TCP scan with service detection and default scripts
 sudo nmap <IP> -p- -sV -sC -oA full_tcp
 
-# top 1000 ports
+# Top 1000 ports
 sudo nmap <IP> -sS -Pn -n -oA quick
 
 # Aggressive scan
 sudo nmap <IP> -A -oA aggressive
 
-# UDP scan top 100 ports
+# UDP scan of the top 100 ports
 sudo nmap <IP> -sU -F -oA udp_fast
 
-# Host discovery sweep a subnet
+# Host discovery on a subnet
 sudo nmap <NETWORK>/24 -sn -oA discovery
 
-# Host discovery from file
+# Host discovery from a file
 sudo nmap -sn -iL hosts.lst -oA discovery
 
-# NSE vuln scan on specific port
+# NSE vulnerability scan on one port
 sudo nmap <IP> -p <PORT> -sV --script vuln -oA vuln_check
 
-# Firewall evasion    decoy scan
+# Firewall evasion with a decoy scan
 sudo nmap <IP> -p <PORT> -sS -Pn -n --disable-arp-ping -D RND:5
 
-# Firewall evasion    source port 53
+# Firewall evasion with source port 53
 sudo nmap <IP> -p <PORT> -sS -Pn -n --disable-arp-ping --source-port 53
 
-# Connect to a filtered port using source port 53
+# Connect to a filtered port with source port 53
 ncat -nv --source-port 53 <IP> <PORT>
 
-# Convert XML output to HTML report
+# Convert XML output to an HTML report
 xsltproc target.xml -o target.html
 ```
 
@@ -54,22 +54,24 @@ xsltproc target.xml -o target.html
 
 ### Phase 1: Host Discovery
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
-  - Which hosts in the target scope are actually alive?
-  - Are ICMP echo requests being blocked by host firewalls?
-  - Should I use ARP ping (same subnet) or ICMP/TCP probes (remote)?
-  - Does the absence of a response mean the host is down, or that probes are filtered?
-  - What alternative discovery methods should I try if ICMP fails?
+  - Which hosts in the target scope are alive?
+  - Do host firewalls block ICMP echo requests?
+  - Are the targets on the same subnet? Use ARP ping.
+  - Are the targets remote? Use ICMP or TCP probes.
+  - Does a missing response mean the host is down?
+  - Or did a filter drop the probes?
+  - If ICMP fails, which other discovery methods should I try?
 </Callout>
 
-- [ ] Sweep the network range with `-sn` to identify live hosts.
-- [ ] If targets are on the same subnet, ARP pings fire automatically    check results.
-- [ ] If hosts appear down, retry with TCP SYN to common ports (`-PS22,80,443`) or TCP ACK (`-PA80`).
-- [ ] For specific targets from a list, use `-iL hosts.lst`.
-- [ ] Save all discovery results with `-oA` for comparison across methods.
-- [ ] Note which hosts responded and which did not non-responders may or may not need further investigation.
+- [ ] **Sweep the network range.** Use `-sn` to find live hosts.
+- [ ] **Check ARP results on the same subnet.** Nmap sends ARP pings automatically when targets are local.
+- [ ] **Retry hosts that appear down.** Use TCP SYN to common ports (`-PS22,80,443`) or TCP ACK (`-PA80`).
+- [ ] **Scan targets from a list.** Use `-iL hosts.lst`.
+- [ ] **Save discovery results.** Use `-oA` so you can compare methods.
+- [ ] **Record which hosts responded.** Non-responders may or may not need more investigation.
 
 ```bash
 # Subnet sweep
@@ -78,35 +80,37 @@ sudo nmap 10.129.2.0/24 -sn -oA tnet | grep for | cut -d" " -f5
 # IP range shorthand
 sudo nmap -sn -oA tnet 10.129.2.18-20
 
-# Force ICMP echo (disable ARP on local subnet)
+# Force ICMP echo. Disable ARP on the local subnet.
 sudo nmap <IP> -sn -PE --disable-arp-ping --packet-trace
 
-# Use --reason to confirm why Nmap considers a host alive
+# Use --reason to show why Nmap marks a host alive
 sudo nmap <IP> -sn -PE --reason
 ```
 
 ### Phase 2: Port Scanning
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
-  - Should I start with a quick top-ports scan or go directly to a full port scan?
-  - What scan technique is appropriate    SYN (stealth) or Connect (no root)?
-  - Are there filtered ports that indicate a firewall is in play?
-  - How do I distinguish between dropped packets (no response) and rejected packets (RST/ICMP)?
-  - Have I scanned UDP ports, or only TCP?
-  - What is the acceptable trade-off between speed and accuracy for this engagement?
+  - Should I start with a top-ports scan?
+  - Or should I start with a full port scan?
+  - Is a SYN scan (`-sS`) appropriate? It needs root.
+  - Is a Connect scan (`-sT`) appropriate? It does not need root.
+  - Do filtered ports show that a firewall is present?
+  - How do I tell dropped packets (no response) from rejected packets (RST or ICMP)?
+  - Did I scan UDP ports? Or only TCP?
+  - What trade-off between speed and accuracy is acceptable for this engagement?
 </Callout>
 
-- [ ] Run a fast initial scan (`-F` or `--top-ports=100/1000`) to get a quick picture.
-- [ ] Launch a full TCP port scan (`-p-`) in the background.
-- [ ] Check filtered ports, use `--packet-trace` and `--reason` to determine if packets are dropped or rejected.
-- [ ] Run a UDP scan (`-sU -F`) on the target, administrators often forget UDP filtering.
-- [ ] Record all port states: open, closed, filtered, open|filtered.
-- [ ] If time-constrained, prioritize full TCP then targeted UDP on common services (53, 67, 68, 69, 123, 137, 138, 161, 500, 514, 1900, 5353).
+- [ ] **Run a fast first scan.** Use `-F` or `--top-ports=100/1000`.
+- [ ] **Start a full TCP port scan.** Use `-p-` in the background.
+- [ ] **Check filtered ports.** Use `--packet-trace` and `--reason`. See if the target dropped or rejected the packets.
+- [ ] **Run a UDP scan.** Use `-sU -F`. Administrators often forget UDP filtering.
+- [ ] **Record all port states.** Record open, closed, filtered, and open|filtered.
+- [ ] **If you have little time, set an order.** Finish full TCP first. Then scan common UDP services (53, 67, 68, 69, 123, 137, 138, 161, 500, 514, 1900, 5353).
 
 ```bash
-# SYN scan top 1000 (default, requires root)
+# SYN scan top 1000 (default, needs root)
 sudo nmap <IP> -sS -oA syn_scan
 
 # Connect scan
@@ -115,7 +119,7 @@ nmap <IP> -sT -oA connect_scan
 # Full port range
 sudo nmap <IP> -p- -oA all_ports
 
-# Trace a specific port to understand firewall behavior
+# Trace one port to observe firewall behavior
 sudo nmap <IP> -p <PORT> --packet-trace -Pn -n --disable-arp-ping
 
 # UDP scan top 100
@@ -124,31 +128,31 @@ sudo nmap <IP> -sU -F -oA udp_scan
 
 ### Phase 3: Service Enumeration and Version Detection
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
-  - What exact service and version is running on each open port?
-  - Does the banner agree with what Nmap's signature matching reports?
-  - Is Nmap missing information that a manual banner grab would reveal?
+  - What exact service and version runs on each open port?
+  - Does the banner match the Nmap signature result?
+  - Is Nmap missing information that a manual banner grab would show?
   - What OS can I infer from service banners and TTL values?
   - Which services are candidates for known CVEs based on their version?
 </Callout>
 
-- [ ] Run `-sV` on all discovered open ports to fingerprint services.
-- [ ] Manually banner-grab interesting/unknown ports with `nc` or `ncat` to catch details Nmap misses.
-- [ ] Use `-sC` (default scripts) for safe additional enumeration.
-- [ ] Run the aggressive scan (`-A`) if noise is acceptable and combines `-sV`, `-O`, `--traceroute`, `-sC`.
-- [ ] Compare automatic results with manual ones, Nmap sometimes truncates banner data.
-- [ ] Record exact versions for exploit research.
+- [ ] **Fingerprint services.** Run `-sV` on all open ports.
+- [ ] **Grab banners manually.** Use `nc` or `ncat` on unknown or interesting ports. Catch details that Nmap misses.
+- [ ] **Run default scripts.** Use `-sC` for extra enumeration that is safe.
+- [ ] **Run an aggressive scan if noise is acceptable.** `-A` combines `-sV`, `-O`, `--traceroute`, and `-sC`.
+- [ ] **Compare automatic results with manual results.** Nmap sometimes truncates banner data.
+- [ ] **Record exact versions** for exploit research.
 
 ```bash
 # Service version detection
 sudo nmap <IP> -p- -sV -oA versions
 
-# Version + default scripts
+# Version detection and default scripts
 sudo nmap <IP> -p- -sV -sC -oA full_enum
 
-# Manual banner grab to validate
+# Manual banner grab to check results
 ncat -nv <IP> <PORT>
 
 # Monitor progress on long scans
@@ -157,21 +161,22 @@ sudo nmap <IP> -p- -sV --stats-every=5s
 
 ### Phase 4: NSE Scripts and Vulnerability Assessment
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
   - Which NSE script categories are safe to run without disrupting services?
-  - Does the `vuln` category reveal known CVEs for the detected versions?
-  - Are there service-specific scripts that extract additional data (users, shares, directories)?
+  - Does the `vuln` category show known CVEs for the detected versions?
+  - Are there scripts for this service that extract extra data?
+  - Can those scripts list users, shares, or directories?
   - What is the OPSEC cost of running intrusive script categories?
   - Do script results match what I would expect from the identified version?
 </Callout>
 
-- [ ] Run `--script vuln` against high-value ports to identify known vulnerabilities.
-- [ ] Use targeted scripts for specific services (e.g., `banner,smtp-commands` for SMTP).
-- [ ] Avoid `brute`, `dos`, `exploit`, and `intrusive` categories unless explicitly authorized and OPSEC-acceptable.
-- [ ] Cross-reference CVEs reported by NSE with version data, validate applicability.
-- [ ] Record all script output for the report.
+- [ ] **Scan high-value ports for known vulnerabilities.** Use `--script vuln`.
+- [ ] **Use scripts for the specific service.** Example: `banner,smtp-commands` for SMTP.
+- [ ] **Avoid `brute`, `dos`, `exploit`, and `intrusive`.** Run them only when they are explicitly authorized and OPSEC-acceptable.
+- [ ] **Compare CVEs from NSE with version data.** Check that each CVE applies.
+- [ ] **Record all script output** for the report.
 
 ```bash
 # Default safe scripts
@@ -189,25 +194,26 @@ sudo nmap <IP> --script discovery
 
 ### Phase 5: Firewall and IDS/IPS Evasion
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
-  - Are filtered ports being dropped (no response/long timeout) or rejected (ICMP unreachable/RST/ICMP error)?
-  - Does an ACK scan (`-sA`) reveal unfiltered ports that a SYN scan shows as filtered?
-  - Can I bypass firewall rules using source port manipulation (DNS port 53)?
-  - Would decoys or fragmentation help avoid IDS detection?
-  - Is there an IPS actively blocking my scanning IP?
-  - Should I switch to a different IP/MAC address if I'm being blocked?
+  - Does the firewall drop filtered ports (no response, long timeout)?
+  - Or does it reject them (ICMP unreachable, RST, or ICMP error)?
+  - Does an ACK scan (`-sA`) show unfiltered ports that a SYN scan shows as filtered?
+  - Can I bypass firewall rules with source port 53 (DNS)?
+  - Would decoys or fragmentation help evade IDS detection?
+  - Is an IPS blocking my scanning IP?
+  - If the target blocks me, should I switch IP or MAC address?
 </Callout>
 
-- [ ] Compare SYN scan results with ACK scan results to map firewall rules.
-- [ ] Test filtered ports with `--source-port 53`,poorly configured firewalls trust DNS traffic.
-- [ ] Use decoy scans (`-D RND:5`) to obscure the true source among noise.
-- [ ] Try scanning from a different source IP (`-S <IP> -e <interface>`) to test subnet-based rules.
-- [ ] Fragment packets (`-f`) to evade shallow packet inspection.
-- [ ] Use `--data-length <num>` to make packets less signature-matchable.
-- [ ] If a VPS gets blocked, switch to another IP/MAC address, confirms IPS is active.
-- [ ] Connect to newly discovered open ports via `ncat --source-port 53` to confirm access.
+- [ ] **Compare SYN scan results with ACK scan results.** Map firewall rules.
+- [ ] **Test filtered ports with `--source-port 53`.** Poorly configured firewalls trust DNS traffic.
+- [ ] **Use decoy scans (`-D RND:5`).** Hide the true source among other addresses.
+- [ ] **Scan from a different source IP.** Use `-S <IP> -e <interface>` to test subnet-based rules.
+- [ ] **Fragment packets (`-f`).** Evade shallow packet inspection.
+- [ ] **Use `--data-length <num>`.** Add data so packets match signatures less often.
+- [ ] **If the target blocks a VPS, switch IP or MAC address.** This shows an IPS is active.
+- [ ] **Connect to newly found open ports.** Use `ncat --source-port 53` to check access.
 
 ```bash
 # ACK scan to detect firewall rules
@@ -219,10 +225,10 @@ sudo nmap <IP> -p 80 -sS -Pn -n --disable-arp-ping -D RND:5
 # Source port 53 to bypass misconfigured firewalls
 sudo nmap <IP> -p <PORT> -sS -Pn -n --disable-arp-ping --source-port 53
 
-# Spoof source IP (must specify interface)
+# Spoof source IP. You must set the interface.
 sudo nmap <IP> -p <PORT> -O -S <SPOOFED_IP> -e tun0
 
-# Confirm access to a filtered port using source port 53
+# Check access to a filtered port with source port 53
 ncat -nv --source-port 53 <IP> <PORT>
 
 # Specify DNS servers for queries
@@ -231,21 +237,22 @@ sudo nmap <IP> --dns-server <NS1>,<NS2>
 
 ### Phase 6: Performance Tuning
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
   - Is scan speed causing me to miss hosts or ports (false negatives)?
-  - Am I whitelisted, allowing aggressive timing, or must I stay under IDS thresholds?
+  - Am I whitelisted, so I may use aggressive timing?
+  - Or must I remain below IDS thresholds?
   - What is the network bandwidth and latency to the target?
-  - Is the trade-off between `-T4`/`-T5` speed and potential detection acceptable?
+  - Is the trade-off between `-T4`/`-T5` speed and possible detection acceptable?
   - Should I reduce retries or adjust RTT timeouts for this network?
 </Callout>
 
-- [ ] For whitelisted/lab environments, use `-T4` or `--min-rate 300` to speed scans.
-- [ ] For stealth, use `-T2` or `-T1` and accept longer scan times.
-- [ ] Adjust `--initial-rtt-timeout` and `--max-rtt-timeout` based on observed latency.
-- [ ] Reduce `--max-retries` (default 10) to speed up but accept potential misses.
-- [ ] Always compare results between fast and default scans to quantify what speed costs.
+- [ ] **Speed scans in whitelisted or lab environments.** Use `-T4` or `--min-rate 300`.
+- [ ] **For stealth, use `-T2` or `-T1`.** Accept longer scan times.
+- [ ] **Set `--initial-rtt-timeout` and `--max-rtt-timeout`.** Use values based on observed latency.
+- [ ] **Reduce `--max-retries` (default 10) to increase speed.** Accept that you may miss ports.
+- [ ] **Always compare fast scans with default scans.** Measure what speed costs.
 
 ```bash
 # Aggressive timing
@@ -254,50 +261,52 @@ sudo nmap <NETWORK>/24 -F -T4
 # Insane timing (lab only)
 sudo nmap <NETWORK>/24 -F -T5
 
-# Custom rate    minimum 300 packets/second
+# Custom rate. Minimum 300 packets per second.
 sudo nmap <NETWORK>/24 -F --min-rate 300
 
 # Reduced RTT for fast networks
 sudo nmap <NETWORK>/24 -F --initial-rtt-timeout 50ms --max-rtt-timeout 100ms
 
-# Zero retries (fastest, may miss ports)
+# Zero retries. Fastest. May miss ports.
 sudo nmap <NETWORK>/24 -F --max-retries 0
 ```
 
 ### When the Scan Finds Nothing
 
-<Callout type="default" >
-  **Ask yourself this :**
+<Callout type="default">
+  **Ask yourself**
 
-  - Did I actually scan all 65535 TCP ports (`-p-`), or stop at the top 1000?
-  - Did I skip UDP entirely? Many footholds (SNMP, TFTP, DNS, IKE) are UDP-only.
-  - Is the host marked "down" only because it blocks ICMP? Did I try `-Pn`?
-  - Are aggressive timing or low retries causing false negatives?
-  - Could a firewall be dropping my SYN packets where another technique would succeed?
+  - Did I scan all 65535 TCP ports (`-p-`)?
+  - Or did I stop at the top 1000?
+  - Did I skip UDP? Many footholds (SNMP, TFTP, DNS, IKE) use UDP only.
+  - Does the host look down only because it blocks ICMP?
+  - Did I try `-Pn`?
+  - Can aggressive timing or low retries cause false negatives?
+  - Could a firewall drop my SYN packets when another technique would succeed?
 </Callout>
 
-- [ ] Re-run with `-p- -Pn` to force a full scan even if the host looks dead.
-- [ ] Add a UDP scan if you only ran TCP.
-- [ ] Slow down (`-T2`, default retries) and compare against the fast baseline.
-- [ ] Try alternate techniques: `-sT` (no root), `-sA` (firewall mapping), `--source-port 53`.
-- [ ] Switch source IP/VPS if an IPS may have blocked you.
-- [ ] Confirm reachability outside Nmap (`ping`, `nc`, `traceroute`) before assuming the host is offline.
+- [ ] **Re-run with `-p- -Pn`.** Force a full scan even if the host looks down.
+- [ ] **Add a UDP scan** if you only ran TCP.
+- [ ] **Reduce speed.** Use `-T2` and default retries. Compare against the fast baseline.
+- [ ] **Try other techniques.** Use `-sT` (no root), `-sA` (firewall mapping), or `--source-port 53`.
+- [ ] **Switch source IP or VPS** if an IPS may have blocked you.
+- [ ] **Check reachability outside Nmap.** Use `ping`, `nc`, and `traceroute` before you assume the host is offline.
 
 ## OPSEC
 
-Port scanning is inherently noisy    assume a competent defender can see it. Pick the technique that matches your noise budget.
+Port scanning is noisy. Assume a competent defender can see it. Pick the technique that matches your noise budget.
 
 | Technique | Noise | Telemetry a defender sees |
 |-----------|-------|---------------------------|
-| SYN scan (`-sS`) | Medium | Many half-open connections; IDS signatures (e.g. Snort/Suricata portscan), firewall logs |
-| Connect scan (`-sT`) | High | Completed connections logged by the service itself (auth logs, web logs), netflow |
-| Aggressive (`-A`) | High | Version probes, OS fingerprint packets, NSE traffic, traceroute    very distinctive |
-| UDP scan (`-sU`) | Medium | Bursts of empty datagrams; slow, sustained traffic that lingers in logs |
-| `vuln`/`brute` NSE | High–Critical | Exploit/login attempts; may appear as attacks and trigger blocks |
-| Decoy (`-D`) | Medium | Obscures source among spoofed IPs; volume still flags a portscan |
-| `-T0`/`-T1` | Low | Spreads probes over time to stay under IDS thresholds; costs hours |
+| SYN scan (`-sS`) | Medium | Many half-open connections. IDS signatures (for example Snort or Suricata portscan). Firewall logs. |
+| Connect scan (`-sT`) | High | Completed connections in service logs (auth logs, web logs). Netflow. |
+| Aggressive (`-A`) | High | Version probes, OS fingerprint packets, NSE traffic, and traceroute. This traffic is very distinctive. |
+| UDP scan (`-sU`) | Medium | Bursts of empty datagrams. Slow, sustained traffic that lingers in logs. |
+| `vuln`/`brute` NSE | High–Critical | Exploit or login attempts. May appear as attacks and trigger blocks. |
+| Decoy (`-D`) | Medium | Hides the source among spoofed IPs. Volume still flags a portscan. |
+| `-T0`/`-T1` | Low | Spreads probes over time to remain below IDS thresholds. Costs hours. |
 
-**OPSEC**    Noise: medium-high · Telemetry: IDS portscan alerts, firewall deny logs, service connection logs, netflow · Prereq: root for `-sS`/`-sU`/`-O` · Footprint: connection log entries; no persistent change on target
+**OPSEC.** Noise: medium-high. Telemetry: IDS portscan alerts, firewall deny logs, service connection logs, and netflow. Prerequisite: root for `-sS`, `-sU`, and `-O`. Footprint: connection log entries. No persistent change on the target.
 
 ## Reference
 
@@ -305,11 +314,11 @@ Port scanning is inherently noisy    assume a competent defender can see it. Pic
 
 Nmap divides into five core capabilities:
 
-1. **Host discovery**    determine which targets are alive
-2. **Port scanning**    identify open, closed, and filtered ports
-3. **Service enumeration**    fingerprint services and versions
-4. **OS detection**    identify the operating system
-5. **NSE**    scriptable interaction with target services
+1. **Host discovery.** Determine which targets are alive.
+2. **Port scanning.** Identify open, closed, and filtered ports.
+3. **Service enumeration.** Fingerprint services and versions.
+4. **OS detection.** Identify the operating system.
+5. **NSE.** Scriptable interaction with target services.
 
 ### Syntax
 
@@ -321,25 +330,25 @@ nmap <scan types> <options> <target>
 
 | Flag | Technique | Use Case |
 |------|-----------|----------|
-| `-sS` | TCP SYN (half-open) | Default with root; stealthier than connect |
-| `-sT` | TCP Connect (full handshake) | No root required; creates logs on target |
-| `-sA` | TCP ACK | Firewall rule mapping (not port state) |
-| `-sU` | UDP | Stateless; slow; often forgotten by admins |
-| `-sN`/`-sF`/`-sX` | TCP Null/FIN/Xmas | Firewall evasion; unreliable on Windows |
-| `-sW` | TCP Window | Like ACK but inspects RST window field |
-| `-sI` | Idle scan | Fully blind via zombie host |
-| `-sO` | IP protocol scan | Identify supported IP protocols |
+| `-sS` | TCP SYN (half-open) | Default with root. Stealthier than Connect. |
+| `-sT` | TCP Connect (full handshake) | No root required. Creates logs on the target. |
+| `-sA` | TCP ACK | Firewall rule mapping (not port state). |
+| `-sU` | UDP | Stateless. Slow. Administrators often forget it. |
+| `-sN`/`-sF`/`-sX` | TCP Null/FIN/Xmas | Firewall evasion. Unreliable on Windows. |
+| `-sW` | TCP Window | Like ACK, but inspects the RST window field. |
+| `-sI` | Idle scan | Fully blind via a zombie host. |
+| `-sO` | IP protocol scan | Identify supported IP protocols. |
 
 ### Port States
 
 | State | Meaning |
 |-------|---------|
-| `open` | Connection established (SYN-ACK for TCP, response for UDP) |
-| `closed` | RST received; port is accessible but no service listening |
-| `filtered` | No response or ICMP error; firewall likely dropping/rejecting |
-| `unfiltered` | ACK scan only; port accessible but open/closed unknown |
-| `open\|filtered` | No response on UDP/Null/FIN/Xmas; ambiguous |
-| `closed\|filtered` | Idle scan only; cannot determine state |
+| `open` | Connection established (SYN-ACK for TCP, response for UDP). |
+| `closed` | RST received. The port is reachable, but no service is listening. |
+| `filtered` | No response or ICMP error. A firewall is likely dropping or rejecting traffic. |
+| `unfiltered` | ACK scan only. The port is reachable, but open or closed is unknown. |
+| `open\|filtered` | No response on UDP, Null, FIN, or Xmas. Ambiguous. |
+| `closed\|filtered` | Idle scan only. Cannot determine state. |
 
 ### TCP SYN Scan Behavior
 
@@ -347,11 +356,11 @@ nmap <scan types> <options> <target>
 - Sends SYN → receives RST = **closed**
 - Sends SYN → no response after retries = **filtered**
 
-The three-way handshake is never completed, so no full TCP connection is logged by most services. Advanced IDS/IPS can still detect half-open scans.
+Nmap never completes the three-way handshake. Most services do not log a full TCP connection. Advanced IDS or IPS can still detect half-open scans.
 
 ### TCP Connect Scan Behavior
 
-Completes the full three-way handshake. More accurate but generates connection logs. Behaves like a normal client, making it less likely to crash fragile services.
+A Connect scan completes the full three-way handshake. It is more accurate. It also creates connection logs. It behaves like a normal client. That makes it less likely to crash fragile services.
 
 ### UDP Scan Behavior
 
@@ -359,21 +368,21 @@ Completes the full three-way handshake. More accurate but generates connection l
 - Sends empty datagram → receives ICMP port unreachable (type 3, code 3) = **closed**
 - Sends empty datagram → no response after retries = **open|filtered**
 
-UDP scanning is significantly slower than TCP due to lack of acknowledgment and longer timeouts.
+UDP scanning is slower than TCP. UDP has no acknowledgment. Timeouts are longer.
 
 ### OS Detection
 
-`-O` fingerprints the operating system using TCP/IP stack behavior (packet ordering, initial sequence numbers, TCP options, window sizes). It needs root and is most accurate with at least one open and one closed port.
+`-O` fingerprints the operating system from TCP/IP stack behavior. It uses packet order, initial sequence numbers, TCP options, and window sizes. It needs root. It is most accurate with at least one open port and one closed port.
 
 ```bash
 # Standalone OS detection
 sudo nmap <IP> -O
 
-# More aggressive guessing when no exact match
+# More aggressive guessing when there is no exact match
 sudo nmap <IP> -O --osscan-guess
 ```
 
-When Nmap cannot find an exact match it prints percentage-based "Aggressive OS guesses." Treat these as hints, not facts    corroborate with the TTL of replies (≈64 = Linux/Unix, ≈128 = Windows, ≈255 = network gear) and service banners. OS detection packets are distinctive and easily flagged, so run it only when the noise is acceptable.
+When Nmap cannot find an exact match, it prints percentage-based Aggressive OS guesses. Treat these as hints, not facts. Compare them with reply TTL values and service banners. Approximate TTL values: 64 for Linux or Unix, 128 for Windows, 255 for network gear. OS detection packets are distinctive. Defenders can flag them easily. Run OS detection only when the noise is acceptable.
 
 ### NSE Script Categories
 
@@ -386,7 +395,7 @@ When Nmap cannot find an exact match it prints percentage-based "Aggressive OS g
 | `discovery` | Service and network information gathering | Low |
 | `dos` | Denial-of-service testing | Critical |
 | `exploit` | Active exploitation of known vulnerabilities | Critical |
-| `external` | Queries external services (e.g., whois) | Low |
+| `external` | Queries external services (for example whois) | Low |
 | `fuzzer` | Protocol fuzzing | High |
 | `intrusive` | May crash or disrupt services | High |
 | `malware` | Malware infection checks | Low |
@@ -409,89 +418,89 @@ Convert XML to HTML: `xsltproc target.xml -o target.html`
 
 | Template | Name | Use Case |
 |----------|------|----------|
-| `-T0` | Paranoid | IDS evasion; serialized; 5-minute wait between probes |
-| `-T1` | Sneaky | IDS evasion; 15-second interval |
-| `-T2` | Polite | Reduced bandwidth usage |
-| `-T3` | Normal | Default |
-| `-T4` | Aggressive | Fast; reliable networks |
-| `-T5` | Insane | Lab/whitelisted only; may miss ports |
+| `-T0` | Paranoid | IDS evasion. Serialized. 5-minute wait between probes. |
+| `-T1` | Sneaky | IDS evasion. 15-second interval. |
+| `-T2` | Polite | Reduced bandwidth usage. |
+| `-T3` | Normal | Default. |
+| `-T4` | Aggressive | Fast. Reliable networks. |
+| `-T5` | Insane | Lab or whitelisted only. May miss ports. |
 
 ### Performance Tuning Options
 
 | Option | Effect | Trade-off |
 |--------|--------|-----------|
-| `--min-rate <n>` | Minimum packets/second | May overwhelm slow links |
-| `--max-retries <n>` | Retry limit per port (default 10) | Lower = faster but may miss |
-| `--initial-rtt-timeout <ms>` | Starting RTT estimate | Too low = false negatives |
-| `--max-rtt-timeout <ms>` | Maximum wait for response | Too low = misses slow hosts |
-| `--host-timeout <time>` | Give up on a host after this | Skips unresponsive targets |
-| `--min-parallelism <n>` | Minimum parallel probes | Higher = faster, noisier |
+| `--min-rate <n>` | Minimum packets per second | May overwhelm slow links |
+| `--max-retries <n>` | Retry limit per port (default 10) | Lower is faster but may miss |
+| `--initial-rtt-timeout <ms>` | Starting RTT estimate | Too low causes false negatives |
+| `--max-rtt-timeout <ms>` | Maximum wait for a response | Too low misses slow hosts |
+| `--host-timeout <time>` | Stop scanning a host after this time | Skips unresponsive targets |
+| `--min-parallelism <n>` | Minimum parallel probes | Higher is faster and noisier |
 
 ### Firewall Evasion Techniques
 
 | Technique | Flag | How It Works |
 |-----------|------|--------------|
 | Decoy scan | `-D RND:5` | Inserts fake source IPs among real scan packets |
-| Source port spoof | `--source-port 53` | Uses trusted port (DNS) as source |
-| Source IP spoof | `-S <IP> -e <iface>` | Changes source IP (need responses routed back) |
+| Source port spoof | `--source-port 53` | Uses a trusted port (DNS) as the source |
+| Source IP spoof | `-S <IP> -e <iface>` | Changes the source IP. Responses must route back. |
 | Fragmentation | `-f` | Splits packets into 8-byte fragments |
-| MTU control | `--mtu <size>` | Custom fragment size (must be multiple of 8) |
-| Data length | `--data-length <n>` | Appends random data to change packet signature |
+| MTU control | `--mtu <size>` | Custom fragment size (must be a multiple of 8) |
+| Data length | `--data-length <n>` | Appends random data to change the packet signature |
 | DNS servers | `--dns-server <ns>` | Use internal DNS servers for resolution |
-| Idle scan | `-sI <zombie>` | Fully blind scan via IPID of zombie host |
+| Idle scan | `-sI <zombie>` | Fully blind scan via the IPID of a zombie host |
 
 ### ACK Scan for Firewall Mapping
 
-The ACK scan (`-sA`) cannot determine if a port is open or closed    it determines whether a port is **filtered** or **unfiltered** by a firewall:
+The ACK scan (`-sA`) cannot determine if a port is open or closed. It determines whether a firewall **filters** or does not filter the port:
 
-- **RST response** = unfiltered (firewall allows the packet through)
-- **No response / ICMP error** = filtered (firewall blocks it)
+- **RST response** = unfiltered (the firewall allows the packet through)
+- **No response / ICMP error** = filtered (the firewall blocks it)
 
-Compare `-sS` and `-sA` results side-by-side to understand which ports the firewall protects.
+Compare `-sS` and `-sA` results. Identify which ports the firewall protects.
 
 ### Banner Grabbing Beyond Nmap
 
-Nmap's `-sV` can miss details from service banners. Validate manually:
+Nmap `-sV` can miss details from service banners. Check banners manually:
 
 ```bash
 # Manual banner grab
 nc -nv <IP> <PORT>
 
-# Capture the three-way handshake + banner with tcpdump
+# Capture the three-way handshake and banner with tcpdump
 sudo tcpdump -i eth0 host <LHOST> and <IP>
 ```
 
-The PSH-ACK packet after the handshake often contains the full banner including OS distribution details that Nmap may truncate.
+The PSH-ACK packet after the handshake often contains the full banner. That banner may include OS distribution details that Nmap may truncate.
 
 <Callout type="warning">
-  Service banners can be customized or stripped. Never rely solely on banner data for OS/version identification    cross-reference with other evidence (TTL values, TCP window sizes, protocol behavior).
+  Service banners can be customized or stripped. Never rely only on banner data for OS or version identification. Compare banners with other evidence. Use TTL values, TCP window sizes, and protocol behavior.
 </Callout>
 
 ### Key Differences: Dropped vs. Rejected Packets
 
 | Behavior | Indicator | What It Means |
 |----------|-----------|---------------|
-| **Dropped** | No response; scan takes ~2s per port (retransmissions) | Firewall silently discards packets |
-| **Rejected** | ICMP type 3/code 3 or TCP RST; fast response | Firewall explicitly denies and notifies |
+| **Dropped** | No response. The scan takes about 2 seconds per port because of retransmissions. | The firewall discards packets with no reply. |
+| **Rejected** | ICMP type 3/code 3 or TCP RST. Fast response. | The firewall denies the packet and notifies the sender. |
 
-Rejected packets reveal firewall presence immediately. Dropped packets waste attacker time but also confirm filtering if you compare timing.
+Rejected packets show a firewall immediately. Dropped packets waste attacker time. Dropped packets also show filtering if you compare timing.
 
 ## Knowledge Check
 
 <Quiz
-  question="Your default Nmap scan of a host returns 'Host seems down. If it is really up, but blocking our ping probes, try -Pn.' You have confirmed the box is in scope and others on the subnet respond. What is the best next step?"
+  question="Your default Nmap scan of a host returns: Host seems down. If it is really up, but blocking our ping probes, try -Pn. The host is in scope. Other hosts on the subnet respond. What is the best next step?"
   options={[
-    "Mark the host as offline and move on",
+    "Mark the host as offline and stop",
     "Re-run the scan with -Pn to skip host discovery",
-    "Immediately launch an aggressive -A scan",
+    "Start an aggressive -A scan immediately",
     "Switch to a UDP scan"
   ]}
   answer={1}
-  explanation="The host is almost certainly filtering ICMP/ARP probes, not down. -Pn tells Nmap to skip host discovery and scan it anyway. Marking it offline misses a live target; jumping to -A wastes time and noise before you even know which ports are open; a UDP scan doesn't address the discovery problem."
+  explanation="The host is almost certainly filtering ICMP or ARP probes. It is not down. -Pn tells Nmap to skip host discovery and scan the host anyway. Marking it offline misses a live target. An immediate -A scan wastes time and noise. You do not yet know which ports are open. A UDP scan does not fix the discovery problem."
 />
 
 <Quiz
-  question="A SYN scan shows TCP/445 as 'filtered'. You need to know whether a firewall is dropping or rejecting the traffic, and whether any rule lets packets through. Which single technique most directly maps the firewall's behavior?"
+  question="A SYN scan shows TCP/445 as filtered. You need to know whether a firewall is dropping or rejecting the traffic. You also need to know whether any rule lets packets through. Which single technique most directly maps the firewall's behavior?"
   options={[
     "Re-run the SYN scan with -T5 for speed",
     "Run an ACK scan (-sA) and compare results",
@@ -499,11 +508,11 @@ Rejected packets reveal firewall presence immediately. Dropped packets waste att
     "Increase --max-retries to 20"
   ]}
   answer={1}
-  explanation="The ACK scan is purpose-built for firewall rule mapping: an RST reply means 'unfiltered' (the firewall passed the ACK), while silence or an ICMP error means 'filtered'. SYN and -A scans report port state, not firewall pass/block behavior, and tuning retries or timing doesn't reveal rule logic."
+  explanation="The ACK scan exists for firewall rule mapping. An RST reply means unfiltered. The firewall passed the ACK. Silence or an ICMP error means filtered. SYN and -A scans report port state, not firewall pass or block behavior. Tuning retries or timing does not show rule logic."
 />
 
 <Quiz
-  question="You are scanning a target on a monitored corporate network and must stay under the IDS radar while still discovering services. Which approach best balances stealth with results?"
+  question="You are scanning a target on a monitored corporate network. You must remain below the IDS radar and still discover services. Which approach best balances stealth with results?"
   options={[
     "sudo nmap <IP> -A -T5",
     "sudo nmap <IP> -sS -T1 with a focused port list",
@@ -511,7 +520,7 @@ Rejected packets reveal firewall presence immediately. Dropped packets waste att
     "sudo nmap <IP> -sT against all ports"
   ]}
   answer={1}
-  explanation="A slow SYN scan (-T1) against a focused port list minimizes the rate of probes that IDS portscan detectors key on, while still half-opening connections to learn port state. -A and --script vuln are extremely loud, and -sT completes full connections that the target's own services log."
+  explanation="A slow SYN scan (-T1) against a focused port list reduces probe rate. IDS portscan detectors watch that rate. The scan still uses half-open connections to learn port state. -A and --script vuln are very loud. -sT completes full connections. The target services log those connections."
 />
 
 ## Common Mistakes
@@ -519,22 +528,22 @@ Rejected packets reveal firewall presence immediately. Dropped packets waste att
 <Callout type="error">
   **Frequent errors**
 
-  - Running only TCP scans and forgetting UDP critical services (DNS, SNMP, TFTP, NFS) live on UDP.
-  - Using `-T5` on real engagements    triggers IDS/IPS and may miss filtered ports.
-  - Setting `--max-retries 0` or aggressive RTT timeouts without comparing results to a baseline.
-  - Assuming "filtered" means "protected"    it means the firewall is there, and there may be bypass paths.
-  - Not saving all output (`-oA`)    makes comparison and reporting painful later.
-  - Trusting Nmap's version detection without manual banner validation.
-  - Scanning without `-Pn` when targets block ICMP    Nmap marks hosts as "down" and skips them.
-  - Forgetting to try `--source-port 53` on filtered ports    misconfigured firewalls often trust DNS.
+  - Run only TCP scans and forget UDP. Critical services (DNS, SNMP, TFTP, NFS) live on UDP.
+  - Use `-T5` on real engagements. This triggers IDS or IPS. You may also miss filtered ports.
+  - Set `--max-retries 0` or aggressive RTT timeouts. Do this without a baseline comparison.
+  - Assume "filtered" means "protected." It means a firewall is present. Bypass paths may still exist.
+  - Skip `-oA`. Comparison and reporting become hard later.
+  - Trust Nmap version detection without a manual banner check.
+  - Scan without `-Pn` when targets block ICMP. Nmap marks hosts as down and skips them.
+  - Forget `--source-port 53` on filtered ports. Misconfigured firewalls often trust DNS.
 </Callout>
 
 ## Attack Chains / Related Notes
 
-- **Leads to:** Service-specific enumeration based on discovered ports    [FTP](/01-Recon-and-Enumeration/Service-Enum/FTP-21), [SMB](/01-Recon-and-Enumeration/Service-Enum/SMB-137,138,139-445(samba)), [SSH](/01-Recon-and-Enumeration/Service-Enum/SSH-22), [SMTP](/01-Recon-and-Enumeration/Service-Enum/SMTP-25,587,465), [DNS](/01-Recon-and-Enumeration/Service-Enum/DNS-53), [SNMP](/01-Recon-and-Enumeration/Service-Enum/SNMP-161,162)
-- **Leads to:** Exploit research based on version information → [Exploitation](/03-Exploitation/)
-- **Leads to:** Firewall rule mapping feeds into [Lateral Movement](/05-Lateral-Movement/) pivot planning
-- **Related:** [Infrastructure Enumeration](/01-Recon-and-Enumeration/Infra-Enum) for broader recon context and alternative alive-detection when Nmap is blocked
+- **Leads to:** Service enumeration from discovered ports. Then: [FTP](/01-Recon-and-Enumeration/Service-Enum/FTP-21), [SMB](/01-Recon-and-Enumeration/Service-Enum/SMB-137,138,139-445(samba)), [SSH](/01-Recon-and-Enumeration/Service-Enum/SSH-22), [SMTP](/01-Recon-and-Enumeration/Service-Enum/SMTP-25,587,465), [DNS](/01-Recon-and-Enumeration/Service-Enum/DNS-53), [SNMP](/01-Recon-and-Enumeration/Service-Enum/SNMP-161,162)
+- **Leads to:** Exploit research from version data. See [Exploitation](/03-Exploitation/).
+- **Leads to:** Firewall rule mapping for pivot planning. See [Lateral Movement](/05-Lateral-Movement/).
+- **Related:** [Infrastructure Enumeration](/01-Recon-and-Enumeration/Infra-Enum). Use it for wider recon. Use it for other alive-detection when a control blocks Nmap.
 
 <div className="pensieve-hashtags">
   #Penetration-Testing #HTB #Nmap #NetworkEnum #PortScan #ServiceDetection #Recon #RustScan #Firewall-Evasion #Linux #Windows #RedTeam #Certification

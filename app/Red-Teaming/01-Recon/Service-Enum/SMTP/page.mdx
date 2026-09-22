@@ -1,9 +1,9 @@
 ---
 title: SMTP - Ports 25, 587, 465
-description: Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging.
+description: "Enumerate and attack SMTP. Cover user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
 openGraph:
   title: "SMTP - Ports 25, 587, 465"
-  description: "Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
+  description: "Enumerate and attack SMTP. Cover user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
   images:
     - url: /imgs/smtp.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "SMTP - Ports 25, 587, 465"
-  description: "Enumeration and attack methodology for SMTP, covering user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
+  description: "Enumerate and attack SMTP. Cover user enumeration, email spoofing (SPF/DKIM/DMARC), open relay testing, version-specific RCE, and mailbox pillaging."
   images:
     - url: /imgs/smtp.jpg
       width: 1672
@@ -111,7 +111,7 @@ QUIT
 
 - [ ] `nc -nv <IP> 25` then `EHLO attacker.local` the banner plus EHLO response reveal the exact server, version, supported extensions, and AUTH mechanisms. **Always EHLO, never HELO** HELO returns less information.
 - [ ] `nmap -sV -sC -p25,587,465 <IP>` defaults cover banner detection, STARTTLS negotiation, and basic command enumeration across all three ports. Port 25 (relay) and 587 (submission) are frequently configured differently  check both.
-- [ ] Identify the software family attack surface differs sharply: **Postfix** (hardened, focus on open relay + VRFY), **Exim** (history of critical pre-auth RCE, version check mandatory), **Sendmail** (legacy CVEs), **Exchange** (ProxyLogon/Shell/NotShell, NTLM leak, OWA/EWS), **hMailServer** (Windows, NTLM auth common).
+- [ ] Identify the software family. Attack surface differs sharply: **Postfix** (hardened, focus on open relay + VRFY), **Exim** (history of critical pre-auth RCE, version check mandatory), **Sendmail** (legacy CVEs), **Exchange** (ProxyLogon/Shell/NotShell, NTLM leak, OWA/EWS), **hMailServer** (Windows, NTLM auth common).
 - [ ] `nmap --script smtp-ntlm-info -p25,587 <IP>` if NTLM auth is advertised, the server leaks NetBIOS hostname, NetBIOS domain, DNS domain, FQDN, and Windows build **without authentication**. The internal AD domain often differs from the external DNS domain this is the highest-value pre-auth recon on SMTP-on-Windows.
 - [ ] `searchsploit <mail_server> <version>` SMTP is one of the few services where the version-to-CVE path routinely yields working pre-auth RCE. Be precise about the version.
 - [ ] For Exchange, `curl -sk https://<IP>/owa/` the OWA HTML typically discloses the exact build number, which maps directly to patch level and CVE applicability.
@@ -155,8 +155,8 @@ QUIT
 
 - [ ] `smtp-user-enum -M RCPT -U users.txt -t <IP> -D <DOMAIN>` the server returns `250 OK` for valid recipients and `550 User unknown` for invalid. Works on almost every server, including modern Postfix/Exchange.
 - [ ] `smtp-user-enum -M VRFY -U users.txt -t <IP>`  the `VRFY` verb is purpose-built to check recipient existence. Most modern servers disable it, but it survives on Sendmail defaults and older Postfix.
-- [ ] `smtp-user-enum -M EXPN -U users.txt -t <IP>` expands lists like `staff@` or `all@` to their members; a single hit can return the entire roster.
-- [ ] Interpret response codes `250`/`252` on VRFY or `250` on RCPT = user exists; `550` = does not exist; `553` = name not allowed; `554` = policy refusal (not nonexistence). If the server returns `252` for *every* query, this method is dead pivot to OSINT-derived names.
+- [ ] `smtp-user-enum -M EXPN -U users.txt -t <IP>` expands lists like `staff@` or `all@` to their members. A single hit can return the entire roster.
+- [ ] Interpret response codes `250`/`252` on VRFY or `250` on RCPT = user exists. `550` = does not exist. `553` = name not allowed. `554` = policy refusal (not nonexistence). If the server returns `252` for *every* query, this method is dead pivot to OSINT-derived names.
 - [ ] `theHarvester -d <DOMAIN> -b all` derive candidate names externally, infer the email format (`first.last`, `flast`), then validate the format against RCPT TO. Every confirmed username feeds Phase 6 and credential sprays elsewhere.
 
 ### Phase 3: Email Spoofing Assessment
@@ -219,7 +219,7 @@ RSET
 QUIT
 ```
 
-- [ ] `nmap --script smtp-open-relay -p25 -v <IP>` runs 16 address-rewriting variants. Read verbose output; partial relay (only certain sender formats) is still a finding.
+- [ ] `nmap --script smtp-open-relay -p25 -v <IP>` runs 16 address-rewriting variants. Read verbose output. Partial relay (only certain sender formats) is still a finding.
 - [ ] Manual test if the server returns `250` for an external `RCPT TO` with an external `MAIL FROM`, it is relaying. A correctly configured server replies `554 relay access denied`.
 - [ ] Check the partial-relay gotchas nmap covers: `user%external@localhost` rewriting, `attacker@[<IP>]` IP-literal bypass, `<@<IP>:victim@external>` source routing, and quoted-string bypasses.
 - [ ] Repeat the unauthenticated-submission check against port 587 submission accepting mail without AUTH is a more severe finding than a port-25 relay.
@@ -247,9 +247,9 @@ nmap --script smtp-vuln-* -p25 <IP>
 
 - [ ] Read the Exim banner (`220 mail.target ESMTP Exim 4.92 ...`) and cross-reference the version table below. Confirm the specific prerequisite (e.g. CVE-2019-10149 needs a reachable `${run{...}}` expansion path) before attempting.
 - [ ] For Exchange, map the OWA/autodiscover build to the Proxy* family (ProxyLogon pre-March 2021, ProxyShell pre-KB5001779, ProxyNotShell pre-Nov 2022). The build number alone determines applicability.
-- [ ] `searchsploit <software> <version>` verify a working PoC exists and read its requirements; do not assume a version match equals exploitability.
+- [ ] `searchsploit <software> <version>` verify a working PoC exists and read its requirements. Do not assume a version match equals exploitability.
 - [ ] Probe safely first (`smtp-vuln-*` NSE) before running any exploit that may crash the daemon and disrupt mail flow.
-- [ ] A vulnerable version is itself a Critical-severity finding you can report it without exploiting if exploitation is too disruptive or out of scope.
+- [ ] A vulnerable version is itself a Critical-severity finding. You can report it without exploiting if exploitation is too disruptive or out of scope.
 
 <Quiz
   question="You're assessing an external mail gateway. Findings: (1) banner is Exchange 2019 CU14 (current, fully patched), (2) SPF is `v=spf1 include:spf.protection.outlook.com -all`, (3) DMARC is `v=DMARC1; p=reject; rua=mailto:dmarc@target.tld; pct=10`, (4) `smtp-ntlm-info` discloses the internal AD domain and hostname. You have no credentials and phishing is in scope. What is the single most exploitable finding for the phishing campaign?"
@@ -260,12 +260,12 @@ nmap --script smtp-vuln-* -p25 <IP>
     "Exchange 2019 CU14 has a known pre-auth RCE chain direct exploitation is faster than phishing"
   ]}
   answer={1}
-  explanation="The `pct=10` tag is decisive. DMARC's `pct` controls the percentage of non-passing mail the policy is applied to; admins deploy `p=reject; pct=10` as a staging rollout and forget to ramp it. Nine of ten spoofed emails bypass enforcement as if the record were `p=none`. Option 1 is wrong `-all` is a proper hard fail. Option 4 is wrong CU14 is current and patched. Option 3 is genuinely valuable but it is an *input* to the campaign, not the defensive weakness that makes phishing land. Parse every DMARC tag, never just `p=`."
+  explanation="The `pct=10` tag is decisive. DMARC's `pct` controls the percentage of non-passing mail the policy is applied to. Admins deploy `p=reject; pct=10` as a staging rollout and forget to ramp it. Nine of ten spoofed emails bypass enforcement as if the record were `p=none`. Option 1 is wrong `-all` is a proper hard fail. Option 4 is wrong CU14 is current and patched. Option 3 is genuinely valuable but it is an *input* to the campaign, not the defensive weakness that makes phishing land. Parse every DMARC tag, never just `p=`."
 />
 
 ## Overview
 
-SMTP (Simple Mail Transfer Protocol) carries outbound and server-to-server mail. It does not handle mailbox access that is IMAP/POP3. The protocol predates the modern threat model and has no built-in sender authentication; every anti-spoofing mechanism (SPF, DKIM, DMARC, BIMI, ARC) is a bolt-on.
+SMTP (Simple Mail Transfer Protocol) carries outbound and server-to-server mail. It does not handle mailbox access that is IMAP/POP3. The protocol predates the modern threat model and has no built-in sender authentication. Every anti-spoofing mechanism (SPF, DKIM, DMARC, BIMI, ARC) is a bolt-on.
 
 | Port | Purpose | Notes |
 |------|---------|-------|
@@ -377,7 +377,7 @@ v=spf1 include:_spf.google.com include:spf.protection.outlook.com ip4:203.0.113.
 
 ### DKIM (DomainKeys Identified Mail)
 
-Cryptographic signature on outgoing mail. The sender signs headers with a private key; the public key lives in DNS at `<selector>._domainkey.<DOMAIN>`.
+Cryptographic signature on outgoing mail. The sender signs headers with a private key. The public key lives in DNS at `<selector>._domainkey.<DOMAIN>`.
 
 ```text
 default._domainkey.example.com. 300 IN TXT "v=DKIM1; k=rsa; p=MIGfMA0GCSq..."
@@ -404,7 +404,7 @@ v=DMARC1; p=reject; sp=quarantine; adkim=s; aspf=r; pct=100; rua=mailto:dmarc@ex
 |-----|---------|-------|
 | `v=DMARC1` | Version (must be first) | |
 | `p=` | Parent policy: `none`, `quarantine`, `reject` | The main enforcement setting |
-| `sp=` | Subdomain policy | If missing, subdomains inherit `p=`; if present, they follow this |
+| `sp=` | Subdomain policy | If missing, subdomains inherit `p=`. If present, they follow this |
 | `adkim=`, `aspf=` | Alignment mode: `r` relaxed, `s` strict | Strict requires exact domain match |
 | `rua=`, `ruf=` | Aggregate / forensic report destinations | |
 

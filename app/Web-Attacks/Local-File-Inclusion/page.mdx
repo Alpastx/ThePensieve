@@ -7,7 +7,7 @@ import { Callout } from 'nextra/components'
 
 # File Inclusion (LFI / RFI)
 
-File Inclusion happens when an application builds a file path from user-controlled input and passes it to a function that reads, renders, or executes that file. If the path is not constrained to an intended allow-list, an attacker can break out of the expected directory, read sensitive local files, disclose source code, poison readable files, or include attacker-controlled code.
+File Inclusion happens when an application builds a file path from user-controlled input. It then passes that path to a function that reads, renders, or executes that file. If the path is not constrained to an intended allow-list, an attacker can break out of the expected directory. The attacker may read sensitive local files, disclose source code, poison readable files, or include attacker-controlled code.
 
 The headline transition for this note is **unauthenticated arbitrary file read -> source and secret disclosure -> RCE -> web shell foothold**. Treat the HTTP request as the evidence: record the exact method, path, parameter, cookie, payload, response proof, and auth state for every working primitive.
 
@@ -239,7 +239,7 @@ curl -sk 'http://<HOST>/index.php?language=/var/lib/php/sessions/sess_<SID>&cmd=
 ```
 
 - [ ] Confirm execution with a low-impact command (`id`, `whoami`) before shells.
-- [ ] Prefer the quietest primitive supported by evidence; avoid broad automated sprays.
+- [ ] Prefer the quietest primitive supported by evidence. Avoid broad automated sprays.
 - [ ] Record the raw request and the equivalent `curl` command for the proof.
 - [ ] After RCE, transition immediately into host-side Orientation and privilege escalation.
 
@@ -271,7 +271,7 @@ curl -sk 'http://<HOST>/index.php?language=../../../../etc/apache2/apache2.conf'
 
 Templating engines and dynamic content loaders often keep a common page layout while swapping one file-controlled section, such as `?language=en` or `?page=about`. The vulnerability appears when the application treats attacker input as a trusted file path.
 
-Impact depends on two properties. A read-only sink leaks files and source. An executing sink runs included code, so anything the attacker can write into a readable file, such as an upload, session, access log, or remote script, can become code execution.
+Impact depends on two properties. A read-only sink leaks files and source. An executing sink runs included code. Anything the attacker can write into a readable file, such as an upload, session, access log, or remote script, can become code execution.
 
 ### Read vs Execute
 
@@ -294,7 +294,12 @@ An executing and remote-capable sink is the worst case because LFI, RFI, wrapper
 
 ## OPSEC
 
-**OPSEC** - Noise: medium-high · Telemetry: access/error-log payload strings (`../`, encoded traversal, `php://`, `data://`, `expect://`, `phar://`), WAF traversal signatures, anomalous `User-Agent`/cookie values containing `<?php`, outbound HTTP/FTP/SMB callbacks, new files in upload or web directories · Prereq: reachable file-path input and the right sink capability · Footprint: poisoned logs/sessions persist, uploaded shells remain, reverse-shell callbacks are observable; clean up files and report poisoned logs.
+**OPSEC**
+
+- Noise: medium-high.
+- Telemetry: access/error-log payload strings (`../`, encoded traversal, `php://`, `data://`, `expect://`, `phar://`), WAF traversal signatures, anomalous `User-Agent`/cookie values containing `<?php`, outbound HTTP/FTP/SMB callbacks, and new files in upload or web directories.
+- Prereq: reachable file-path input and the right sink capability.
+- Footprint: poisoned logs/sessions persist, uploaded shells remain, reverse-shell callbacks are observable. Clean up files and report poisoned logs.
 
 Manual single requests are usually quiet. Large LFI wordlists, recursive fuzzing, log inclusion, and automated tools create obvious access-log volume and can destabilize targets, especially when logs are huge.
 
@@ -361,7 +366,7 @@ Use a response proof that cannot be confused with reflection, such as `root:x:0:
 | `include($input)` | none | Absolute path or traversal |
 | `include("./languages/" . $input)` | prepended directory | Traverse out with `../../../../etc/passwd` |
 | `include("lang_" . $input)` | prepended string | Start with `/` so the prefix becomes a dead path segment |
-| `include($input . ".php")` | appended extension | Modern PHP: read source with `php://filter`; old PHP only: null byte or truncation |
+| `include($input . ".php")` | appended extension | Modern PHP: read source with `php://filter`. Old PHP only: null byte or truncation |
 | `str_replace('../', '', $input)` once | non-recursive stripping | Nested traversal such as `....//....//etc/passwd` |
 | blacklist for `.` or `/` | character filtering | URL or double URL encoding |
 | regex requiring `./languages/` | approved-path restriction | Start in the approved path, then traverse out |
@@ -401,7 +406,7 @@ curl -sk 'http://<HOST>/index.php?language=expect://id'
 
 ### RFI
 
-Remote File Inclusion requires a sink that accepts remote URLs. Almost every RFI is also LFI, but LFI does not imply RFI. Test a benign local URL first to separate sink behavior from outbound firewall behavior, and avoid including the vulnerable page itself because recursive inclusion can cause denial of service.
+Remote File Inclusion requires a sink that accepts remote URLs. Almost every RFI is also LFI, but LFI does not imply RFI. Test a benign local URL first to separate sink behavior from outbound firewall behavior. Avoid including the vulnerable page itself, because recursive inclusion can cause denial of service.
 
 ```bash
 # Verify URL inclusion safely against localhost first
@@ -461,7 +466,7 @@ The raw image method is the most reliable. `zip://` and `phar://` are PHP-specif
 
 ### Log and Session Poisoning
 
-Log/session poisoning writes PHP into a file the server already stores and the vulnerable include can read. Confirm read access first; poisoning a file you cannot include wastes time and creates noise.
+Log/session poisoning writes PHP into a file the server already stores and the vulnerable include can read. Confirm read access first. Poisoning a file you cannot include wastes time and creates noise.
 
 ```bash
 # Read a PHP session file
@@ -516,7 +521,7 @@ Do not match only HTTP 200. Source and protected files may be useful even when t
 
 ### Prevention
 
-- Map user input to fixed identifiers, such as `en -> en.php`; never concatenate raw input into a path.
+- Map user input to fixed identifiers, such as `en -> en.php`. Never concatenate raw input into a path.
 - Resolve paths with `realpath()` and verify the result stays under an intended base directory.
 - Reject path separators, traversal tokens, wrapper schemes, and absolute paths before the file sink.
 - Disable `allow_url_include`, avoid enabling `allow_url_fopen` unless required, and do not load `expect`.
@@ -556,7 +561,7 @@ union isfuzzy=true (WAF_CL), (W3CIISLog)
 - **Came from:** web parameter discovery, content fuzzing with `ffuf`, source-code review, or CMS/plugin enumeration where a file selector is exposed.
 - **Leads to (read-only):** source disclosure, `.env`/config secrets, `id_rsa` theft, credential reuse against SSH, databases, admin panels, and other services.
 - **Leads to (RCE):** wrapper RCE, RFI, malicious upload inclusion, log poisoning, or session poisoning -> web shell -> [Post-Exploitation Orientation](/04-Post-Exploitation/).
-- **Related web attacks:** [XSS](/Web-Attacks/XSS) for request/response discipline and stored payload thinking; file upload attacks pair directly with LFI-to-RCE; XXE and SSRF share wrapper and remote-fetch tradecraft.
+- **Related web attacks:** [XSS](/Web-Attacks/XSS) for request/response discipline and stored payload thinking. File upload attacks pair directly with LFI-to-RCE. XXE and SSRF share wrapper and remote-fetch tradecraft.
 
 <Quiz
   question="A PHP 8 application calls include($_GET['language'] . '.php') and you need config.php source. What should you try first?"

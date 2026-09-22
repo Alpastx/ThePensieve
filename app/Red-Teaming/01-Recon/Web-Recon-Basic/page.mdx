@@ -99,7 +99,7 @@ site:<DOMAIN> (ext:conf OR ext:cnf OR ext:sql)
 
 <Callout type="info">
   Passive recon never sends traffic to the target, so it is effectively
-  undetectable. Exhaust it before active probing, every subdomain or credential found passively saves a noisy active query later.
+  undetectable. Exhaust it before active probing. Every subdomain or credential found passively saves a noisy active query later.
 </Callout>
 
 ### Phase 2: DNS Enumeration and Subdomain Discovery
@@ -135,7 +135,7 @@ dnsx -l subdomains.txt -resp -a -aaaa -cname -silent
 - [ ] Enumerate records: `dig <DOMAIN> any`, plus explicit `a`, `aaaa`, `mx`, `ns`, `txt` queries.
 - [ ] Attempt a zone transfer against **every** NS: `dig axfr <DOMAIN> @<DNS_IP>`.
 - [ ] Pull subdomains passively from CT logs (`crt.sh`, Censys) before brute forcing.
-- [ ] Brute force subdomains with `dnsenum`/`ffuf` and a SecLists DNS wordlist; enable recursion on hits.
+- [ ] Brute force subdomains with `dnsenum`/`ffuf` and a SecLists DNS wordlist. Enable recursion on hits.
 - [ ] Resolve every discovered subdomain to its IP and group hosts by IP for the vhost phase.
 
 <Callout type="warning">
@@ -211,7 +211,7 @@ searchsploit <PRODUCT> <VERSION>
 - [ ] Map each finding to a version and check `searchsploit` / advisories for matching CVEs.
 
 <Callout type="warning">
-  **OPSEC** Noise:  `nikto` is very loud and trivially logged keep it last choice.
+  **OPSEC** Noise: `nikto` is very loud and trivially logged. Keep it last choice.
 </Callout>
 
 ### Phase 5: Content and Endpoint Discovery
@@ -279,7 +279,7 @@ katana -u <URL> -d 3 -silent -o katana-urls.txt
 When every phase above is complete and no clear path remains:
 
 1. Re-run from Phase 1 with the evidence collected, new subdomains often unlock new vhosts and endpoints.
-2. Re-attempt AXFR and CT-log queries; zones and certificates change over time.
+2. Re-attempt AXFR and CT-log queries. Zones and certificates change over time.
 3. Swap wordlists (different SecLists DNS/content lists) and re-fuzz vhosts and directories.
 4. Recheck headers and behavior on every host, not just the primary domain.
 5. Re-feed crawler-extracted usernames and emails into credential attacks against the softest host.
@@ -290,7 +290,7 @@ When every phase above is complete and no clear path remains:
 
 Key fields to extract and why they matter:
 
-- `Registrar` / `Creation Date` / `Expiry Date` : domain age and legitimacy; old, long-registered domains are established assets.
+- `Registrar` / `Creation Date` / `Expiry Date` : domain age and legitimacy. Old, long-registered domains are established assets.
 - `Registrant / Admin / Tech Organization` : the owning entity and points of contact (social engineering and scope confirmation).
 - `Domain Status` (e.g. `clientTransferProhibited`) : locks that indicate security maturity.
 - `Name Servers` : self-hosted vs third-party DNS, hinting at infrastructure and hosting provider.
@@ -377,7 +377,7 @@ dig axfr <DOMAIN> @<DNS_IP>
 3. `Port-Based` : different sites on different ports of one IP.
 | Tool | Use for vhosts |
 |---|---|
-| [gobuster](https://github.com/OJ/gobuster) | `vhost` mode; needs `--append-domain` on newer versions |
+| [gobuster](https://github.com/OJ/gobuster) | `vhost` mode. Needs `--append-domain` on newer versions |
 | [Feroxbuster](https://github.com/epi052/feroxbuster) | Rust speed, recursion, filters |
 | [ffuf](https://github.com/ffuf/ffuf) | Fuzz the `Host` header with `-H "Host: FUZZ.<DOMAIN>"` |
 
@@ -481,7 +481,7 @@ site:example.com filetype:sql
 
 <Callout type="error">
   - Jumping to active scanning before exhausting passive sources wasting stealth and tipping off the target.
-  - Trying AXFR against only one name server; test **every** NS, since one misconfigured secondary is enough.
+  - Trying AXFR against only one name server. Test **every** NS, since one misconfigured secondary is enough.
   - Trusting privacy-redacted WHOIS as complete and skipping DNS/CT correlation.
   - Forgetting `--append-domain` on modern Gobuster vhost mode, producing zero (or wrong) results.
   - Running `nikto` against a WAF-protected host and getting blocked/blacklisted.
@@ -496,7 +496,7 @@ site:example.com filetype:sql
     "Re-run whois with a different registrar lookup"
   ]}
   answer={1}
-  explanation="Sites that share an IP but are absent from public DNS are found by varying the Host header (virtual host discovery), not by DNS brute forcing or directory brute forcing. nikto is noisy and would not surface unlinked vhosts, and WHOIS yields nothing new here."
+  explanation="Sites that share an IP but are absent from public DNS are found by varying the Host header (virtual host discovery), not by DNS brute forcing or directory brute forcing. nikto is noisy and would not surface unlinked vhosts. WHOIS yields nothing new here."
 />
 
 <Quiz

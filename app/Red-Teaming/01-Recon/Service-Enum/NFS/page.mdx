@@ -1,9 +1,9 @@
 ---
 title: NFS - Ports 111(UDP/TCP), 2049
-description: Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging.
+description: "Enumerate and attack NFS (ports 111 and 2049). Cover export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
 openGraph:
   title: "NFS - Ports 111(UDP/TCP), 2049"
-  description: "Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
+  description: "Enumerate and attack NFS (ports 111 and 2049). Cover export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
   images:
     - url: /imgs/nfs.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "NFS - Ports 111(UDP/TCP), 2049"
-  description: "Enumeration and attack methodology for NFS (ports 111 and 2049), covering export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
+  description: "Enumerate and attack NFS (ports 111 and 2049). Cover export discovery, UID squatting, no_root_squash root escalation, and credential pillaging."
   images:
     - url: /imgs/nfs.jpg
       width: 1672
@@ -85,10 +85,10 @@ nxc nfs <IP> --shares
 - [ ] `sudo nmap --script "nfs*" -p111,2049 <IP>` runs `nfs-showmount`, `nfs-ls`, and `nfs-statfs`. `nfs-ls` enumerates file contents and permissions without mounting, so you get a listing even when your UID cannot mount.
 - [ ] `rpcinfo -p <IP>` lists every registered RPC program (portmapper, nfs, mountd, nlockmgr, status). Confirms negotiable NFS versions and reveals auxiliary services.
 - [ ] `nxc nfs <IP> --shares` lists shares with read/write flags and surfaces root-escape conditions automatically.
-- [ ] Parse the allowed-host column for each export and decide your access plan: `*` / `0.0.0.0/0` is world-mountable; a specific subnet means you must be on it or pivot; a single host means you must compromise or pivot through that host first.
+- [ ] Parse the allowed-host column for each export and decide your access plan: `*` / `0.0.0.0/0` is world-mountable. A specific subnet means you must be on it or pivot. A single host means you must compromise or pivot through that host first.
 
 <Callout type="info">
-Some hardened servers disable mountd's `showmount` protocol while still serving NFS. If `showmount -e` hangs or returns empty but port 2049 is open, fall back to `sudo nmap --script nfs-showmount,nfs-ls -p111,2049 <IP>` it queries the NFS server directly rather than asking mountd to list exports, and often succeeds where `showmount` fails.
+Some hardened servers disable mountd's `showmount` protocol while still serving NFS. If `showmount -e` hangs or returns empty but port 2049 is open, fall back to `sudo nmap --script nfs-showmount,nfs-ls -p111,2049 <IP>`. It queries the NFS server directly rather than asking mountd to list exports, and often succeeds where `showmount` fails.
 </Callout>
 
 ### Phase 2: Mount and Explore
@@ -141,7 +141,7 @@ nxc nfs <IP> --shares
 
 - [ ] `touch /mnt/nfs/.wtest 2>/dev/null && echo WRITABLE && rm /mnt/nfs/.wtest` probe write permission with a disposable marker.
 - [ ] Cross-reference `nxc nfs <IP> --shares`, which flags writable shares explicitly.
-- [ ] If writable, determine what the share maps to: a user's `$HOME` → drop `.ssh/authorized_keys` for instant SSH as that user; a web root (`/var/www/html`, `/srv/http`, `/opt/tomcat/webapps`) → drop a web shell and trigger via HTTP; a shared/logs dir → plant a marker and watch where it surfaces to infer what touches it.
+- [ ] If writable, determine what the share maps to: a user's `$HOME` → drop `.ssh/authorized_keys` for instant SSH as that user. A web root (`/var/www/html`, `/srv/http`, `/opt/tomcat/webapps`) → drop a web shell and trigger via HTTP. A shared/logs dir → plant a marker and watch where it surfaces to infer what touches it.
 - [ ] If cron or a watcher service reads the share, hijack a script that runs as root.
 
 ### Phase 4: UID Squatting (Access Restricted Files)
@@ -210,11 +210,11 @@ nxc nfs <IP>
 ```
 
 - [ ] Confirm the option: with a shell, `cat /etc/exports` and look for `no_root_squash`. Without a shell, mount as root, `touch` a file, and `ls -l` it `root:root` (not `nobody:nogroup`) confirms `no_root_squash`.
-- [ ] **Match the primitive to the exposed path.** An export mapped to `/home` (not `/`) rules out `/etc/cron.d/` and `/root/.ssh/` you can only reach user home directories, so the clean play is dropping your key in `/home/<user>/.ssh/authorized_keys` for every user whose directory exists. A SUID-bash drop is useless there until you already have a foothold to execute it.
-- [ ] **SUID-binary method** (requires a low-priv shell on the target): copy `/bin/bash` into the export, `chmod 4755`, then run it on the target with `-p`. The `-p` is essential without it bash drops privileges when euid ≠ uid.
-- [ ] **SSH `authorized_keys` method** (no target shell needed): write your public key into a writable `/root/.ssh/` or a user's `.ssh/` exposed by the export, then SSH in.
+- [ ] **Match the primitive to the exposed path.** An export mapped to `/home` (not `/`) rules out `/etc/cron.d/` and `/root/.ssh/`. You can only reach user home directories. The clean play is dropping your key in `/home/<user>/.ssh/authorized_keys` for every user whose directory exists. A SUID-bash drop is useless there until you already have a foothold to execute it.
+- [ ] **SUID-binary method** (requires a low-priv shell on the target): copy `/bin/bash` into the export, `chmod 4755`, then run it on the target with `-p`. The `-p` is essential. Without it bash drops privileges when euid ≠ uid.
+- [ ] **SSH `authorized_keys` method** (no target shell needed): write your public key into a writable `/root/.ssh/` or a user's `.ssh/` exposed by the export. Then SSH in.
 - [ ] **Cron / sudoers drop** (when the export reaches `/etc`): plant a root cron job or a sudoers file. Only possible if the export root is `/` (or `/etc`) with `no_root_squash`.
-- [ ] **`no_subtree_check` root escape** (fallback when the export is read-only or maps to a boring subtree): `nxc nfs <IP>` flags this as `Root escape: Yes`. The option (the modern default, enabled for performance) means the server does not verify that a submitted file handle lives inside the exported subtree, so a crafted handle can reach `/etc/shadow`, `/root/.ssh/`, or any inode. Use file-handle tooling such as [`libnfs`/`nfs-cat`](https://github.com/sahlberg/libnfs); it is fiddly, so prefer the writable/`no_root_squash` paths first.
+- [ ] **`no_subtree_check` root escape** (fallback when the export is read-only or maps to a boring subtree): `nxc nfs <IP>` flags this as `Root escape: Yes`. The option (the modern default, enabled for performance) means the server does not verify that a submitted file handle lives inside the exported subtree. A crafted handle can reach `/etc/shadow`, `/root/.ssh/`, or any inode. Use file-handle tooling such as [`libnfs`/`nfs-cat`](https://github.com/sahlberg/libnfs). It is fiddly, so prefer the writable/`no_root_squash` paths first.
 
 
 <Quiz
@@ -226,7 +226,7 @@ nxc nfs <IP>
     "Drop an SSH key in every /home/*/.ssh/authorized_keys you can find on the share"
   ]}
   answer={2}
-  explanation="The share maps to /srv/share, so options A and D are impossible there are no /home/ or /root/ directories inside /srv/share to target, and the SUID drop is useless without a foothold to execute it. Path traversal in the mount (B) does not work: NFS resolves paths on the server, so '..' normally stays within the export's subtree. no_subtree_check (C) is exactly what relaxes that guarantee it lets you construct file handles for inodes outside the exported subtree. Combined with no_root_squash (root authority server-side), this is the one technique that can actually reach /root/.ssh/ from this export. It is fiddly but it is the only viable path given the constraints."
+  explanation="The share maps to /srv/share, so options A and D are impossible. There are no /home/ or /root/ directories inside /srv/share to target, and the SUID drop is useless without a foothold to execute it. Path traversal in the mount (B) does not work: NFS resolves paths on the server, so '..' normally stays within the export's subtree. no_subtree_check (C) is exactly what relaxes that guarantee. It lets you construct file handles for inodes outside the exported subtree. Combined with no_root_squash (root authority server-side), this is the one technique that can actually reach /root/.ssh/ from this export. It is fiddly but it is the only viable path given the constraints."
 />
 
 ## Overview
@@ -242,7 +242,7 @@ NFS (Network File System) is the native Unix/Linux file-sharing protocol the equ
 
 **Ports:**
 
-- `111/TCP/UDP` RPCbind / Portmapper (maps RPC programs to dynamic ports). Used by NFSv3 and below; NFSv4 does not require it.
+- `111/TCP/UDP` RPCbind / Portmapper (maps RPC programs to dynamic ports). Used by NFSv3 and below. NFSv4 does not require it.
 - `2049/TCP/UDP` the NFS service itself.
 
 <Callout type="info">
@@ -322,7 +322,7 @@ nxc nfs <IP> --put-file <LOCAL> <REMOTE> --share <SHARE>
 ```
 
 <Callout type="info">
-NetExec's NFS module tests for the `no_subtree_check` root escape automatically and surfaces it as `Root escape: Yes`. If you see it, work the `no_subtree_check` step in Phase 5 you may be able to reach `/etc/shadow`, `/root/.ssh/`, or any other filesystem location from within the mount.
+NetExec's NFS module tests for the `no_subtree_check` root escape automatically and surfaces it as `Root escape: Yes`. If you see it, work the `no_subtree_check` step in Phase 5. You may be able to reach `/etc/shadow`, `/root/.ssh/`, or any other filesystem location from within the mount.
 </Callout>
 
 <div className="flex flex-wrap gap-2 mb-4">

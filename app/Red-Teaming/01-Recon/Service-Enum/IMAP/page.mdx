@@ -1,9 +1,9 @@
 ---
 title: IMAP / POP3 - Ports 143, 993, 110, 995
-description: Enumeration and attack methodology for IMAP and POP3 mail access protocols, covering capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture.
+description: "Enumerate and attack IMAP and POP3 mail access protocols. Cover capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture."
 openGraph:
   title: "IMAP / POP3 - Ports 143, 993, 110, 995"
-  description: "Enumeration and attack methodology for IMAP and POP3 mail access protocols, covering capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture."
+  description: "Enumerate and attack IMAP and POP3 mail access protocols. Cover capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture."
   images:
     - url: /imgs/imap-pop3.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "IMAP / POP3 - Ports 143, 993, 110, 995"
-  description: "Enumeration and attack methodology for IMAP and POP3 mail access protocols, covering capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture."
+  description: "Enumerate and attack IMAP and POP3 mail access protocols. Cover capability fingerprinting, credential attacks, mailbox pillaging, and NTLM hash capture."
   images:
     - url: /imgs/imap-pop3.jpg
       width: 1672
@@ -141,8 +141,8 @@ nmap -p 143,993,110,995 --script "imap-* or pop3-*" <IP>
 - [ ] `nmap -sV -sC -p110,143,993,995 <IP>` : detect software and version. Common targets: Dovecot, Courier, Cyrus, Exchange, hMailServer. Confirm whether TLS ports (993/995) are reachable.
 - [ ] `nc -nv <IP> 143` / `nc -nv <IP> 110` : manual banner grab. Most servers leak the exact product and version in the greeting line.
 - [ ] Compare the banner from netcat with Nmap's `-sV` detection : mismatches may indicate a proxy, custom banner, or version spoofing.
-- [ ] `nmap --script imap-capabilities -p143 <IP>` : list IMAP capabilities. `LOGINDISABLED` means auth is blocked on this port (only TLS accepted); `STARTTLS` allows encryption upgrade; `AUTH=PLAIN`/`AUTH=NTLM` reveal accepted mechanisms.
-- [ ] `nmap --script pop3-capabilities -p110 <IP>` : same for POP3. `USER`, `APOP`, `SASL` reveal accepted auth methods; `STLS` means STARTTLS is supported.
+- [ ] `nmap --script imap-capabilities -p143 <IP>` : list IMAP capabilities. `LOGINDISABLED` means auth is blocked on this port (only TLS accepted). `STARTTLS` allows encryption upgrade. `AUTH=PLAIN`/`AUTH=NTLM` reveal accepted mechanisms.
+- [ ] `nmap --script pop3-capabilities -p110 <IP>` : same for POP3. `USER`, `APOP`, `SASL` reveal accepted auth methods. `STLS` means STARTTLS is supported.
 - [ ] `nmap --script imap-ntlm-info -p143 <IP>` (and `pop3-ntlm-info`) : if NTLM auth is supported, this discloses hostname, NetBIOS name, DNS domain, and OS build **without credentials**. Free AD-enumeration win.
 - [ ] `searchsploit dovecot` / `cyrus imap` , check the exact version against public exploits.
 
@@ -283,8 +283,8 @@ nxc winrm <IP> -u users.txt -p creds.txt
 ```
 
 - [ ] Confirm `AUTH=NTLM` in the `CAPABILITY` output before expecting any NTLM material.
-- [ ] `sudo responder -I <INTERFACE>` capture Net-NTLMv2 if a misconfigured client authenticates to your host; crack with hashcat/john or relay with ntlmrelayx.
-- [ ] `nmap --script imap-ntlm-info -p143 <IP>` even with no creds, this discloses hostname, NetBIOS name, DNS domain, and OS version; feed these into LDAP/SMB enumeration.
+- [ ] `sudo responder -I <INTERFACE>` capture Net-NTLMv2 if a misconfigured client authenticates to your host. Crack with hashcat/john or relay with ntlmrelayx.
+- [ ] `nmap --script imap-ntlm-info -p143 <IP>` even with no creds, this discloses hostname, NetBIOS name, DNS domain, and OS version. Feed these into LDAP/SMB enumeration.
 - [ ] Extract every credential from mailbox content into a fresh `creds.txt` spray against SSH, SMB, WinRM, RDP, databases, and web admin panels.
 - [ ] Try the same IMAP/POP3 creds against SMTP. If SMTP AUTH succeeds, send phishing from a real internal account that passes SPF/DKIM/DMARC.
 - [ ] If VPN configs (`.ovpn`) or SSH keys appear in attachments, connect and pivot to the internal network.
@@ -299,7 +299,7 @@ nxc winrm <IP> -u users.txt -p creds.txt
     "Try the same passwords against the user's other mail folders to find more credentials"
   ]}
   answer={1}
-  explanation="A 'creds backup' email is a goldmine, but the highest-EV move is parallel spraying. Service-account passwords in this kind of dump are routinely reused across SSH/WinRM/SMB/RDP netexec fires all of them in seconds and often surfaces admin access on hosts the user wasn't supposed to touch. Hit the named services (MySQL, WordPress) right after, but never skip the spray phase: WordPress RCE is great, but credential reuse is what gives you footing on *other* hosts."
+  explanation="A 'creds backup' email is high value, but the highest-EV move is parallel spraying. Service-account passwords in this kind of dump are routinely reused across SSH/WinRM/SMB/RDP. netexec fires all of them in seconds and often surfaces admin access on hosts the user was not supposed to touch. Hit the named services (MySQL, WordPress) right after, but never skip the spray phase. WordPress RCE is useful, but credential reuse is what gives you footing on *other* hosts."
 />
 
 ## Reference
@@ -313,9 +313,9 @@ nxc winrm <IP> -u users.txt -p creds.txt
 | POP3 | 110/TCP | None | Email download messages typically removed from the server after retrieval |
 | POP3S | 995/TCP | TLS/SSL | Encrypted POP3 |
 
-**IMAP** (Internet Message Access Protocol) is a standard email protocol that stores email messages on a mail server and allows the end user to view and manipulate them as though they were stored locally. Unlike POP3, IMAP synchronizes email across multiple devices and allows management of email directly on the server folder hierarchies, search, partial fetches, and flags are all server-side operations.
+**IMAP** (Internet Message Access Protocol) is a standard email protocol that stores email messages on a mail server. It lets the end user view and manipulate them as though they were stored locally. Unlike POP3, IMAP synchronizes email across multiple devices. Folder hierarchies, search, partial fetches, and flags are all server-side operations.
 
-**POP3** (Post Office Protocol version 3) retrieves emails from a remote server to a local client. It typically downloads messages and deletes them from the server (configurable). POP3 is simpler than IMAP but less feature-rich designed primarily for offline email access with no folder concept, no server-side search, and only an INBOX view.
+**POP3** (Post Office Protocol version 3) retrieves emails from a remote server to a local client. It typically downloads messages and deletes them from the server (configurable). POP3 is simpler than IMAP but has fewer features. It is designed primarily for offline email access. It has no folder concept, no server-side search, and only an INBOX view.
 
 <Callout type="info">
 Always prefer IMAP when both are available. POP3 has no folder concept (only INBOX), no server-side search, and may delete messages on retrieval. IMAP is non-destructive and supports `SEARCH BODY` queries that grep across years of email in one command.
@@ -365,7 +365,7 @@ Always prefer IMAP when both are available. POP3 has no folder concept (only INB
 | `a LOGOUT` | End session |
 
 <Callout type="info">
-The prefix (`a`, `a1`, `b`, etc.) is a tag for matching responses to commands the server echoes it back. It can be any short, consistent string; it is not a sequence counter.
+The prefix (`a`, `a1`, `b`, etc.) is a tag for matching responses to commands the server echoes it back. It can be any short, consistent string. It is not a sequence counter.
 </Callout>
 
 ### POP3 Commands
@@ -386,7 +386,7 @@ The prefix (`a`, `a1`, `b`, etc.) is a tag for matching responses to commands th
 | `QUIT` | End session (commits deletions) |
 
 <Callout type="warning">
-`QUIT` commits any `DELE` operations from the session. If you accidentally mark messages for deletion during enumeration, run `RSET` before quitting otherwise you destroy evidence and tip off the user that someone was in the mailbox.
+`QUIT` commits any `DELE` operations from the session. If you accidentally mark messages for deletion during enumeration, run `RSET` before quitting. Otherwise you destroy evidence and tip off the user that someone was in the mailbox.
 </Callout>
 
 
@@ -405,7 +405,7 @@ If the server advertises `AUTH=NTLM`, captured Net-NTLMv2 hashes can be cracked 
 <Callout type="error">
   - **Only reading INBOX** Sent, Drafts, and Trash are where users stash credentials and forgotten reset emails. Enumerate every folder with `LIST "" *`.
   - **Forgetting `RSET` on POP3** a stray `DELE` plus `QUIT` permanently deletes mail, destroys evidence, and tips off the user.
-  - **Brute forcing before spraying harvested creds** mail accounts have the highest reuse rate; try known credentials and lazy combos before any wordlist blast.
+  - **Brute forcing before spraying harvested creds** mail accounts have the highest reuse rate. Try known credentials and lazy combos before any wordlist blast.
   - **Skipping `CAPABILITY` / `CAPA`** guessing passwords against an auth mechanism the server rejects wastes time and noise. Read capabilities first.
   - **Not recycling mailbox creds** every password found in mail must be sprayed against SSH, SMB, WinRM, RDP, databases, and SMTP immediately.
   - **Ignoring the cleartext-vs-TLS choice** authenticating on 143/110 when 993/995 exist exposes credentials to anyone sniffing the wire.

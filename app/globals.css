@@ -5,6 +5,9 @@
   --foreground: #ededed;
   --nextra-primary-hue: 270deg;
   --nextra-primary-saturation: 71%;
+  --nextra-primary-lightness: 55%;
+  --nextra-bg: 0, 0, 0;
+  --nextra-content-width: 90rem;
 }
 
 @theme inline {

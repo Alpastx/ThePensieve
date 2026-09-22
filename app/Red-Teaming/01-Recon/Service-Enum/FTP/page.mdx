@@ -1,9 +1,9 @@
 ---
 title: FTP - Port 21
-description: Enumeration and attack methodology for FTP services on port 21, including anonymous access, credential attacks, known exploits, and TFTP.
+description: "Enumerate and attack FTP services on port 21. Cover anonymous access, credential attacks, known exploits, and TFTP."
 openGraph:
   title: "FTP - Port 21"
-  description: "Enumeration and attack methodology for FTP services on port 21, including anonymous access, credential attacks, known exploits, and TFTP."
+  description: "Enumerate and attack FTP services on port 21. Cover anonymous access, credential attacks, known exploits, and TFTP."
   images:
     - url: /imgs/ftp.jpg
       width: 1672
@@ -13,7 +13,7 @@ openGraph:
 twitter:
   card: summary_large_image
   title: "FTP - Port 21"
-  description: "Enumeration and attack methodology for FTP services on port 21, including anonymous access, credential attacks, known exploits, and TFTP."
+  description: "Enumerate and attack FTP services on port 21. Cover anonymous access, credential attacks, known exploits, and TFTP."
   images:
     - url: /imgs/ftp.jpg
       width: 1672
@@ -166,9 +166,9 @@ nxc ftp <IP> -u admin -p admin # common defaults
 nxc ftp <IP> -u users.txt -p pass.txt # password list
 ```
 
-- [ ] Try common defaults: Many FTP servers ship with default credentials that are never changed  especially in lab environments, internal networks, and IoT devices.
+- [ ] Try common defaults. Many FTP servers ship with default credentials that are never changed, especially in lab environments, internal networks, and IoT devices.
 - [ ] Check if FTP users are system users on Linux, FTP often authenticates against `/etc/passwd`. Usernames found via SMTP VRFY, `/etc/passwd` dumps, LDAP queries, or RID cycling may work here with common or reused passwords.
-- [ ] Spray credentials harvested from other services against FTP. Credential reuse is the single most common way into FTP a database password from a config file, an SNMP community string, or an LDAP bind credential may work as an FTP login.
+- [ ] Spray credentials harvested from other services against FTP. Credential reuse is the most common way into FTP. A database password from a config file, an SNMP community string, or an LDAP bind credential may work as an FTP login.
 
 ### Phase 4: Misconfiguration Checks
 
@@ -283,7 +283,7 @@ Unlike most protocols that use a single TCP connection, FTP separates control an
 | Control | TCP 21 | Commands (`USER`, `PASS`, `LIST`, `RETR`, `STOR`) and server response codes |
 | Data | TCP 20 (active) or ephemeral (passive) | Actual file content and directory listings |
 
-**Active vs Passive mode:** In **active mode**, the client tells the server its IP and port via the `PORT` command, and the server initiates a data connection back to the client on that address. This often fails when the client is behind a firewall or NAT because the inbound connection gets blocked. In **passive mode**, the server opens a random high port and tells the client to connect to it via the `PASV` response the client initiates both connections, which works better through firewalls. If downloads fail, toggle between modes (`passive` command in the FTP session, `--no-passive` flag with wget).
+**Active vs Passive mode:** In **active mode**, the client tells the server its IP and port via the `PORT` command. The server initiates a data connection back to the client on that address. This often fails when the client is behind a firewall or NAT because the inbound connection gets blocked. In **passive mode**, the server opens a random high port and tells the client to connect to it via the `PASV` response. The client initiates both connections, which works better through firewalls. If downloads fail, toggle between modes (`passive` command in the FTP session, `--no-passive` flag with wget).
 
 
 ## Connection Methods
@@ -294,7 +294,7 @@ Unlike most protocols that use a single TCP connection, FTP separates control an
 ftp <IP>
 ftp <IP> <PORT>
 ```
-The standard `ftp` client is available on virtually every Linux and Windows system. The port argument is optional and defaults to 21. The built-in client is fine for manual enumeration but lacks scripted mirroring and robust error handling  use `lftp` or `wget` for bulk operations.
+The standard `ftp` client is available on virtually every Linux and Windows system. The port argument is optional and defaults to 21. The built-in client is fine for manual enumeration. It lacks scripted mirroring and reliable error handling. Use `lftp` or `wget` for bulk operations.
 
 ### lftp (Enhanced Client)
 
@@ -389,7 +389,7 @@ Before brute forcing with rockyou.txt (14 million entries), try smaller targeted
 
 ### FTP Bounce Attack
 
-The FTP bounce attack exploits the `PORT` command, which tells the server where to send data. If the server does not validate the target address, an attacker can instruct it to send data to **any host and port** effectively turning the FTP server into a proxy for port scanning internal networks, bypassing firewall rules, and masking the true source of an attack.
+The FTP bounce attack exploits the `PORT` command, which tells the server where to send data. If the server does not validate the target address, an attacker can instruct it to send data to **any host and port**. That turns the FTP server into a proxy. It can port-scan internal networks, bypass firewall rules, and mask the true source of an attack.
 
 ```bash
 nmap --script ftp-bounce -p21 <IP>
@@ -448,7 +448,7 @@ The PHP shell file persists on disk after execution. Clean up immediately: `ftp>
 </Callout>
 
 <Callout type="default">
-If you do not know whether the FTP directory maps to a web root, check FTP server config files for path directives: vsFTPd uses `anon_root` or `local_root` in `/etc/vsftpd.conf`, ProFTPd uses `DefaultRoot` in `/etc/proftpd/proftpd.conf`, IIS FTP uses site bindings in `C:\Windows\System32\inetsrv\config\applicationHost.config`. Common web roots: `/var/www/html`, `/var/www`, `/srv/http`, `C:\inetpub\wwwroot`, `C:\xampp\htdocs`.
+If you do not know whether the FTP directory maps to a web root, check FTP server config files for path directives. vsFTPd uses `anon_root` or `local_root` in `/etc/vsftpd.conf`. ProFTPd uses `DefaultRoot` in `/etc/proftpd/proftpd.conf`. IIS FTP uses site bindings in `C:\Windows\System32\inetsrv\config\applicationHost.config`. Common web roots: `/var/www/html`, `/var/www`, `/srv/http`, `C:\inetpub\wwwroot`, `C:\xampp\htdocs`.
 </Callout>
 
 <Quiz
@@ -460,7 +460,7 @@ If you do not know whether the FTP directory maps to a web root, check FTP serve
     "No ASP.NET blocks FTP-uploaded files from executing"
   ]}
   answer={1}
-  explanation="The principle is identical: writable FTP + web root + server-side execution = RCE. Match the shell language to the web stack use .aspx for ASP.NET, .jsp for Tomcat, .php for Apache/PHP. If no server-side execution is available (static HTML server), this attack chain doesn't work, but you can still upload phishing pages or plant files for other exploitation paths."
+  explanation="The principle is identical: writable FTP + web root + server-side execution = RCE. Match the shell language to the web stack. Use .aspx for ASP.NET, .jsp for Tomcat, and .php for Apache/PHP. If no server-side execution is available (static HTML server), this attack chain does not work. You can still upload phishing pages or plant files for other exploitation paths."
 />
 
 ## TFTP : UDP Port 69
@@ -531,7 +531,7 @@ The most dangerous combination is `anonymous_enable=YES` + `anon_upload_enable=Y
 <Callout type="error">
   - **Forgetting `binary` mode**: uploading executables or archives in ASCII mode silently corrupts them. The reverse shell binary fails on the target with no helpful error.
   - **Jumping to brute force too early**  always exhaust anonymous access, default creds, and credential reuse first. Brute force is slow, noisy, and often gets you banned.
-  - **Not spraying FTP credentials elsewhere**  FTP credentials found in config files or through login must be tried against SSH, SMB, WinRM, RDP, and databases immediately.
+  - **Not spraying FTP credentials elsewhere.** FTP credentials found in config files or through login must be tried against SSH, SMB, WinRM, RDP, and databases immediately.
   - **Not checking write access** always `put test.txt` to verify write permissions. Missing writable anonymous access on a web root is the difference between an informational finding and RCE.
   - **Ignoring TFTP on UDP 69**  it requires no authentication and is easily missed if you only scan TCP.
   - **Using `--passive` when `--no-passive` is needed**  if `wget -m` hangs, the server is likely behind NAT and passive mode data connections are failing. Toggle the mode.
